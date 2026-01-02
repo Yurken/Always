@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package luma.v1;
+
+option go_package = "github.com/luma/proto;lumapb";
+
+import "google/protobuf/empty.proto";
+
+message Context {
+  string user_text = 1;
+  int64 timestamp = 2;
+  Mode mode = 3;
+  map<string, string> signals = 4;
+  string history_summary = 5;
+}
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  SILENT = 1;
+  LIGHT = 2;
+  ACTIVE = 3;
+}
+
+enum ActionType {
+  ACTION_UNSPECIFIED = 0;
+  DO_NOT_DISTURB = 1;
+  ENCOURAGE = 2;
+  TASK_BREAKDOWN = 3;
+  REST_REMINDER = 4;
+  REFRAME = 5;
+}
+
+enum RiskLevel {
+  RISK_UNSPECIFIED = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+}
+
+message Action {
+  ActionType action_type = 1;
+  string message = 2;
+  float confidence = 3;
+  float cost = 4;
+  RiskLevel risk_level = 5;
+}
+
+message DecideRequest {
+  Context context = 1;
+}
+
+message DecideResponse {
+  Action action = 1;
+  string policy_version = 2;
+}
+
+message Feedback {
+  string request_id = 1;
+  string feedback = 2;
+}
+
+service LumaAI {
+  rpc Decide(DecideRequest) returns (DecideResponse);
+  rpc Feedback(Feedback) returns (google.protobuf.Empty);
+}

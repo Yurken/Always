@@ -1,0 +1,26 @@
+{
+  "name": "luma-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "dev:main": "tsc -p electron/tsconfig.json --watch",
+    "dev:electron": "wait-on dist-electron/main.js && electron dist-electron/main.js",
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:main\" \"npm:dev:electron\"",
+    "build:main": "tsc -p electron/tsconfig.json",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "vue": "3.4.29"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "5.0.5",
+    "concurrently": "8.2.2",
+    "electron": "30.0.9",
+    "typescript": "5.4.5",
+    "vite": "5.2.11",
+    "wait-on": "7.2.0"
+  }
+}

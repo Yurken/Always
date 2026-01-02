@@ -1,0 +1,25 @@
+# Node/Electron
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/dist-electron/
+apps/desktop/.vite/
+.idea
+.vscode
+# Go
+services/core-go/core-go
+services/core-go/*.exe
+services/core-go/*.test
+
+# Python
+services/ai-py/.venv/
+services/ai-py/__pycache__/
+services/ai-py/*.pyc
+services/ai-py/data/
+
+# Runtime data
+/data/
+*.db
+*.log
+
+# OS
+.DS_Store
