@@ -10,6 +10,15 @@ const (
 	ModeActive Mode = "ACTIVE"
 )
 
+type FeedbackType string
+
+const (
+	FeedbackLike    FeedbackType = "LIKE"
+	FeedbackDislike FeedbackType = "DISLIKE"
+	FeedbackAdopted FeedbackType = "ADOPTED"
+	FeedbackIgnored FeedbackType = "IGNORED"
+)
+
 type RiskLevel string
 
 const (
@@ -26,6 +35,14 @@ const (
 	ActionTaskBreakdown ActionType = "TASK_BREAKDOWN"
 	ActionRestReminder  ActionType = "REST_REMINDER"
 	ActionReframe       ActionType = "REFRAME"
+)
+
+type GatewayDecisionType string
+
+const (
+	GatewayAllow    GatewayDecisionType = "ALLOW"
+	GatewayDeny     GatewayDecisionType = "DENY"
+	GatewayOverride GatewayDecisionType = "OVERRIDE"
 )
 
 type Context struct {
@@ -45,29 +62,83 @@ type Action struct {
 }
 
 type DecisionRequest struct {
-	Context Context `json:"context"`
+	RequestID string  `json:"request_id,omitempty"`
+	Context   Context `json:"context"`
+}
+
+type GatewayDecision struct {
+	Decision             GatewayDecisionType `json:"decision"`
+	Reason               string              `json:"reason"`
+	OverriddenActionType ActionType          `json:"overridden_action_type,omitempty"`
 }
 
 type DecisionResponse struct {
-	RequestID     string    `json:"request_id"`
-	Context       Context   `json:"context"`
-	Action        Action    `json:"action"`
-	PolicyVersion string    `json:"policy_version"`
-	LatencyMs     int64     `json:"latency_ms"`
-	CreatedAt     time.Time `json:"created_at"`
+	RequestID       string          `json:"request_id"`
+	Context         Context         `json:"context"`
+	Action          Action          `json:"action"`
+	PolicyVersion   string          `json:"policy_version"`
+	ModelVersion    string          `json:"model_version"`
+	LatencyMs       int64           `json:"latency_ms"`
+	CreatedAt       time.Time       `json:"created_at,omitempty"`
+	CreatedAtMs     int64           `json:"created_at_ms"`
+	GatewayDecision GatewayDecision `json:"gateway_decision"`
 }
 
 type FeedbackRequest struct {
-	RequestID string `json:"request_id"`
-	Feedback  string `json:"feedback"`
+	RequestID string       `json:"request_id"`
+	Feedback  FeedbackType `json:"feedback"`
 }
 
-type LogEntry struct {
-	RequestID     string    `json:"request_id"`
-	ContextJSON   string    `json:"context_json"`
-	ActionJSON    string    `json:"action_json"`
-	PolicyVersion string    `json:"policy_version"`
-	LatencyMs     int64     `json:"latency_ms"`
-	UserFeedback  string    `json:"user_feedback"`
-	CreatedAt     time.Time `json:"created_at"`
+type DecisionLogEntry struct {
+	RequestID       string
+	Context         Context
+	RawAction       Action
+	FinalAction     Action
+	GatewayDecision GatewayDecision
+	PolicyVersion   string
+	ModelVersion    string
+	LatencyMs       int64
+	CreatedAt       time.Time
+	CreatedAtMs     int64
+}
+
+type EventLog struct {
+	RequestID       string          `json:"request_id"`
+	Context         Context         `json:"context"`
+	Action          Action          `json:"action"`
+	RawAction       Action          `json:"raw_action"`
+	FinalAction     Action          `json:"final_action"`
+	GatewayDecision GatewayDecision `json:"gateway_decision"`
+	PolicyVersion   string          `json:"policy_version"`
+	ModelVersion    string          `json:"model_version"`
+	LatencyMs       int64           `json:"latency_ms"`
+	UserFeedback    string          `json:"user_feedback,omitempty"`
+	CreatedAt       time.Time       `json:"created_at,omitempty"`
+	CreatedAtMs     int64           `json:"created_at_ms"`
+	ContextJSON     string          `json:"context_json,omitempty"`
+	ActionJSON      string          `json:"action_json,omitempty"`
+}
+
+type ExportRecord struct {
+	RequestID       string          `json:"request_id"`
+	Context         Context         `json:"context"`
+	RawAction       Action          `json:"raw_action"`
+	FinalAction     Action          `json:"final_action"`
+	GatewayDecision GatewayDecision `json:"gateway_decision"`
+	UserFeedback    string          `json:"user_feedback,omitempty"`
+	PolicyVersion   string          `json:"policy_version"`
+	ModelVersion    string          `json:"model_version"`
+	LatencyMs       int64           `json:"latency_ms"`
+	CreatedAtMs     int64           `json:"created_at_ms"`
+}
+
+type SettingItem struct {
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	UpdatedAtMs int64  `json:"updated_at_ms"`
+}
+
+type SettingRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }

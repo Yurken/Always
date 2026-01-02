@@ -3,7 +3,6 @@ package ai
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,16 +25,27 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) Decide(ctx models.Context) (models.Action, string, error) {
+func (c *Client) Decide(ctx models.Context, requestID string) (models.Action, string, string, error) {
 	payload := map[string]any{"context": ctx}
+	if requestID != "" {
+		payload["request_id"] = requestID
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return models.Action{}, "", fmt.Errorf("marshal request: %w", err)
+		return models.Action{}, "", "", fmt.Errorf("marshal request: %w", err)
 	}
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		resp, err := c.http.Post(c.baseURL+"/ai/decide", "application/json", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, c.baseURL+"/ai/decide", bytes.NewReader(body))
+		if err != nil {
+			return models.Action{}, "", "", fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if requestID != "" {
+			req.Header.Set("X-Request-ID", requestID)
+		}
+		resp, err := c.http.Do(req)
 		if err != nil {
 			lastErr = err
 			backoff(attempt)
@@ -50,6 +60,7 @@ func (c *Client) Decide(ctx models.Context) (models.Action, string, error) {
 		var parsed struct {
 			Action        models.Action `json:"action"`
 			PolicyVersion string        `json:"policy_version"`
+			ModelVersion  string        `json:"model_version"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 			resp.Body.Close()
@@ -58,16 +69,16 @@ func (c *Client) Decide(ctx models.Context) (models.Action, string, error) {
 			continue
 		}
 		resp.Body.Close()
-		if err := validateAction(parsed.Action); err != nil {
-			return models.Action{}, "", err
-		}
 		if parsed.PolicyVersion == "" {
 			parsed.PolicyVersion = "policy_v0"
 		}
-		return parsed.Action, parsed.PolicyVersion, nil
+		if parsed.ModelVersion == "" {
+			parsed.ModelVersion = "stub"
+		}
+		return parsed.Action, parsed.PolicyVersion, parsed.ModelVersion, nil
 	}
 
-	return models.Action{}, "", fmt.Errorf("ai decide failed: %w", lastErr)
+	return models.Action{}, "", "", fmt.Errorf("ai decide failed: %w", lastErr)
 }
 
 func (c *Client) Feedback(reqID, feedback string) error {
@@ -79,7 +90,15 @@ func (c *Client) Feedback(reqID, feedback string) error {
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		resp, err := c.http.Post(c.baseURL+"/ai/feedback", "application/json", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, c.baseURL+"/ai/feedback", bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create feedback request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if reqID != "" {
+			req.Header.Set("X-Request-ID", reqID)
+		}
+		resp, err := c.http.Do(req)
 		if err != nil {
 			lastErr = err
 			backoff(attempt)
@@ -96,34 +115,6 @@ func (c *Client) Feedback(reqID, feedback string) error {
 	}
 
 	return fmt.Errorf("ai feedback failed: %w", lastErr)
-}
-
-func validateAction(action models.Action) error {
-	validAction := map[models.ActionType]bool{
-		models.ActionDoNotDisturb:  true,
-		models.ActionEncourage:     true,
-		models.ActionTaskBreakdown: true,
-		models.ActionRestReminder:  true,
-		models.ActionReframe:       true,
-	}
-	if !validAction[action.ActionType] {
-		return fmt.Errorf("invalid action_type: %s", action.ActionType)
-	}
-	validRisk := map[models.RiskLevel]bool{
-		models.RiskLow:    true,
-		models.RiskMedium: true,
-		models.RiskHigh:   true,
-	}
-	if !validRisk[action.RiskLevel] {
-		return fmt.Errorf("invalid risk_level: %s", action.RiskLevel)
-	}
-	if action.Confidence < 0 || action.Confidence > 1 {
-		return errors.New("confidence out of range")
-	}
-	if action.Message == "" {
-		return errors.New("message is required")
-	}
-	return nil
 }
 
 func backoff(attempt int) {

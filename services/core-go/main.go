@@ -1,12 +1,10 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
-
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 
 	"luma/core/internal/ai"
 	"luma/core/internal/db"
@@ -14,7 +12,7 @@ import (
 )
 
 func main() {
-	zerolog.TimeFieldFormat = time.RFC3339Nano
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	port := getenv("CORE_PORT", "8081")
 	aiURL := getenv("AI_URL", "http://127.0.0.1:8788")
@@ -22,11 +20,12 @@ func main() {
 
 	store, err := db.Open(dbPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("db init failed")
+		logger.Error("db init failed", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	aiClient := ai.NewClient(aiURL)
-	handler := httpapi.NewHandler(store, aiClient, log.Logger)
+	handler := httpapi.NewHandler(store, aiClient, logger)
 
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -35,9 +34,10 @@ func main() {
 		WriteTimeout: 5 * time.Second,
 	}
 
-	log.Info().Msgf("core service listening on %s", server.Addr)
+	logger.Info("core service listening", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal().Err(err).Msg("server crashed")
+		logger.Error("server crashed", slog.Any("error", err))
+		os.Exit(1)
 	}
 }
 

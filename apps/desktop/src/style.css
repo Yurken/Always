@@ -163,4 +163,83 @@ textarea {
   border-radius: 12px;
   border: 1px solid #e5e7eb;
   background: #f9fafb;
+  display: grid;
+  gap: 14px;
+}
+
+.settings h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-note {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-row label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.segmented button {
+  flex: 1;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  background: transparent;
+  font-size: 13px;
+}
+
+.segmented button.active {
+  background: #111827;
+  color: #f9fafb;
+}
+
+.time-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-range input {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: inherit;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-error {
+  color: #b91c1c;
+  font-size: 12px;
 }

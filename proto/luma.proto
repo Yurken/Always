@@ -45,18 +45,72 @@ message Action {
   RiskLevel risk_level = 5;
 }
 
+enum GatewayDecisionType {
+  GATEWAY_DECISION_UNSPECIFIED = 0;
+  ALLOW = 1;
+  DENY = 2;
+  OVERRIDE = 3;
+}
+
+message GatewayDecision {
+  GatewayDecisionType decision = 1;
+  string reason = 2;
+  ActionType overridden_action_type = 3;
+}
+
 message DecideRequest {
   Context context = 1;
+  string request_id = 2;
 }
 
 message DecideResponse {
   Action action = 1;
   string policy_version = 2;
+  string model_version = 3;
+}
+
+message DecisionRequest {
+  string request_id = 1;
+  Context context = 2;
+}
+
+message DecisionResponse {
+  string request_id = 1;
+  Context context = 2;
+  Action action = 3;
+  string policy_version = 4;
+  string model_version = 5;
+  int64 latency_ms = 6;
+  int64 created_at_ms = 7;
+  GatewayDecision gateway_decision = 8;
+}
+
+message EventLog {
+  string request_id = 1;
+  Context context = 2;
+  Action raw_action = 3;
+  Action final_action = 4;
+  GatewayDecision gateway_decision = 5;
+  string user_feedback = 6;
+  string policy_version = 7;
+  string model_version = 8;
+  int64 latency_ms = 9;
+  int64 created_at_ms = 10;
+}
+
+enum FeedbackType {
+  FEEDBACK_UNSPECIFIED = 0;
+  LIKE = 1;
+  DISLIKE = 2;
+  ADOPTED = 3;
+  IGNORED = 4;
 }
 
 message Feedback {
   string request_id = 1;
   string feedback = 2;
+  FeedbackType feedback_type = 3;
+  int64 created_at_ms = 4;
 }
 
 service LumaAI {

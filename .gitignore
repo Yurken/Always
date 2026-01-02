@@ -15,6 +15,7 @@ services/ai-py/.venv/
 services/ai-py/__pycache__/
 services/ai-py/*.pyc
 services/ai-py/data/
+services/ai-py/logs/
 
 # Runtime data
 /data/

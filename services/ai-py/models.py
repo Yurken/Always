@@ -41,11 +41,13 @@ class Action(BaseModel):
 
 class DecideRequest(BaseModel):
     context: Context
+    request_id: Optional[str] = None
 
 
 class DecideResponse(BaseModel):
     action: Action
     policy_version: str
+    model_version: str
 
 
 class FeedbackRequest(BaseModel):

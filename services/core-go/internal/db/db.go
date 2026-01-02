@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -20,18 +21,34 @@ CREATE TABLE IF NOT EXISTS event_logs (
   request_id TEXT NOT NULL UNIQUE,
   context_json TEXT NOT NULL,
   action_json TEXT NOT NULL,
+  raw_action_json TEXT NOT NULL,
+  final_action_json TEXT NOT NULL,
+  gateway_decision_json TEXT NOT NULL,
   policy_version TEXT NOT NULL,
+  model_version TEXT NOT NULL,
   latency_ms INTEGER NOT NULL,
   user_feedback TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS feedback_events (
+CREATE TABLE IF NOT EXISTS feedback_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   request_id TEXT NOT NULL,
   feedback TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_event_logs_request_id ON event_logs (request_id);
+CREATE INDEX IF NOT EXISTS idx_event_logs_created_at_ms ON event_logs (created_at_ms);
+CREATE INDEX IF NOT EXISTS idx_feedback_logs_request_id ON feedback_logs (request_id);
 `
 
 type Store struct {
@@ -52,32 +69,186 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := applyMigrations(db); err != nil {
+		return nil, fmt.Errorf("apply migrations: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
-func (s *Store) InsertDecision(entry models.DecisionResponse) error {
+func applyMigrations(db *sql.DB) error {
+	columns := []string{
+		"raw_action_json TEXT",
+		"final_action_json TEXT",
+		"gateway_decision_json TEXT",
+		"model_version TEXT",
+		"created_at_ms INTEGER",
+	}
+	for _, column := range columns {
+		if err := addColumnIfMissing(db, "event_logs", column); err != nil {
+			return err
+		}
+	}
+	if err := backfillEventLogs(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addColumnIfMissing(db *sql.DB, table, columnDef string) error {
+	_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", table, columnDef))
+	if err != nil {
+		if isDuplicateColumnErr(err) || isMissingTableErr(err) {
+			return nil
+		}
+		return fmt.Errorf("add column %s to %s: %w", columnDef, table, err)
+	}
+	return nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	return strings.Contains(err.Error(), "duplicate column name")
+}
+
+func isMissingTableErr(err error) bool {
+	return strings.Contains(err.Error(), "no such table")
+}
+
+func backfillEventLogs(db *sql.DB) error {
+	_, err := db.Exec(`
+		UPDATE event_logs
+		SET raw_action_json = action_json
+		WHERE raw_action_json IS NULL OR raw_action_json = ''
+	`)
+	if err != nil {
+		return fmt.Errorf("backfill raw_action_json: %w", err)
+	}
+	_, err = db.Exec(`
+		UPDATE event_logs
+		SET final_action_json = action_json
+		WHERE final_action_json IS NULL OR final_action_json = ''
+	`)
+	if err != nil {
+		return fmt.Errorf("backfill final_action_json: %w", err)
+	}
+	legacyDecision := models.GatewayDecision{Decision: models.GatewayAllow, Reason: "legacy_import"}
+	legacyDecisionJSON, _ := json.Marshal(legacyDecision)
+	_, err = db.Exec(`
+		UPDATE event_logs
+		SET gateway_decision_json = ?
+		WHERE gateway_decision_json IS NULL OR gateway_decision_json = ''
+	`, string(legacyDecisionJSON))
+	if err != nil {
+		return fmt.Errorf("backfill gateway_decision_json: %w", err)
+	}
+	_, err = db.Exec(`
+		UPDATE event_logs
+		SET model_version = 'stub'
+		WHERE model_version IS NULL OR model_version = ''
+	`)
+	if err != nil {
+		return fmt.Errorf("backfill model_version: %w", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT request_id, created_at
+		FROM event_logs
+		WHERE created_at_ms IS NULL OR created_at_ms = 0
+	`)
+	if err != nil {
+		return fmt.Errorf("select created_at rows: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var requestID, createdAt string
+		if err := rows.Scan(&requestID, &createdAt); err != nil {
+			return fmt.Errorf("scan created_at: %w", err)
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			parsed = time.Now()
+		}
+		if _, err := db.Exec(
+			`UPDATE event_logs SET created_at_ms = ? WHERE request_id = ?`,
+			parsed.UnixMilli(),
+			requestID,
+		); err != nil {
+			return fmt.Errorf("update created_at_ms: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) InsertDecision(entry models.DecisionLogEntry) error {
 	ctxJSON, err := json.Marshal(entry.Context)
 	if err != nil {
 		return fmt.Errorf("marshal context: %w", err)
 	}
-	actionJSON, err := json.Marshal(entry.Action)
+	rawActionJSON, err := json.Marshal(entry.RawAction)
 	if err != nil {
-		return fmt.Errorf("marshal action: %w", err)
+		return fmt.Errorf("marshal raw action: %w", err)
 	}
+	finalActionJSON, err := json.Marshal(entry.FinalAction)
+	if err != nil {
+		return fmt.Errorf("marshal final action: %w", err)
+	}
+	gatewayDecisionJSON, err := json.Marshal(entry.GatewayDecision)
+	if err != nil {
+		return fmt.Errorf("marshal gateway decision: %w", err)
+	}
+
+	createdAt := entry.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	createdAtMs := entry.CreatedAtMs
+	if createdAtMs == 0 {
+		createdAtMs = createdAt.UnixMilli()
+	}
+	policyVersion := entry.PolicyVersion
+	if policyVersion == "" {
+		policyVersion = "policy_v0"
+	}
+	modelVersion := entry.ModelVersion
+	if modelVersion == "" {
+		modelVersion = "stub"
+	}
+
 	_, err = s.db.Exec(
-		`INSERT INTO event_logs (request_id, context_json, action_json, policy_version, latency_ms, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO event_logs (request_id, context_json, action_json, raw_action_json, final_action_json, gateway_decision_json, policy_version, model_version, latency_ms, created_at, created_at_ms)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.RequestID,
 		string(ctxJSON),
-		string(actionJSON),
-		entry.PolicyVersion,
+		string(finalActionJSON),
+		string(rawActionJSON),
+		string(finalActionJSON),
+		string(gatewayDecisionJSON),
+		policyVersion,
+		modelVersion,
 		entry.LatencyMs,
-		entry.CreatedAt.Format(time.RFC3339Nano),
+		createdAt.Format(time.RFC3339Nano),
+		createdAtMs,
 	)
 	if err != nil {
 		return fmt.Errorf("insert event log: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) DecisionExists(reqID string) (bool, error) {
+	row := s.db.QueryRow(`SELECT 1 FROM event_logs WHERE request_id = ? LIMIT 1`, reqID)
+	var exists int
+	if err := row.Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("check request_id: %w", err)
+	}
+	return true, nil
 }
 
 func (s *Store) RecordFeedback(reqID, feedback string) error {
@@ -89,25 +260,27 @@ func (s *Store) RecordFeedback(reqID, feedback string) error {
 	if err != nil {
 		return fmt.Errorf("update feedback: %w", err)
 	}
+	createdAt := time.Now()
 	_, err = s.db.Exec(
-		`INSERT INTO feedback_events (request_id, feedback, created_at) VALUES (?, ?, ?)`,
+		`INSERT INTO feedback_logs (request_id, feedback, created_at, created_at_ms) VALUES (?, ?, ?, ?)`,
 		reqID,
 		feedback,
-		time.Now().Format(time.RFC3339Nano),
+		createdAt.Format(time.RFC3339Nano),
+		createdAt.UnixMilli(),
 	)
 	if err != nil {
-		return fmt.Errorf("insert feedback event: %w", err)
+		return fmt.Errorf("insert feedback log: %w", err)
 	}
 	return nil
 }
 
-func (s *Store) ListLogs(limit int) ([]models.LogEntry, error) {
+func (s *Store) ListLogs(limit int) ([]models.EventLog, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := s.db.Query(
-		`SELECT request_id, context_json, action_json, policy_version, latency_ms, COALESCE(user_feedback, ''), created_at
-		 FROM event_logs ORDER BY id DESC LIMIT ?`,
+		`SELECT request_id, context_json, action_json, raw_action_json, final_action_json, gateway_decision_json, policy_version, model_version, latency_ms, COALESCE(user_feedback, ''), created_at, created_at_ms
+		 FROM event_logs ORDER BY created_at_ms DESC, id DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -115,30 +288,196 @@ func (s *Store) ListLogs(limit int) ([]models.LogEntry, error) {
 	}
 	defer rows.Close()
 
-	var logs []models.LogEntry
+	var logs []models.EventLog
 	for rows.Next() {
-		var entry models.LogEntry
+		var entry models.EventLog
 		var createdAt string
+		var rawActionJSON string
+		var finalActionJSON string
+		var gatewayDecisionJSON string
 		if err := rows.Scan(
 			&entry.RequestID,
 			&entry.ContextJSON,
 			&entry.ActionJSON,
+			&rawActionJSON,
+			&finalActionJSON,
+			&gatewayDecisionJSON,
 			&entry.PolicyVersion,
+			&entry.ModelVersion,
 			&entry.LatencyMs,
 			&entry.UserFeedback,
 			&createdAt,
+			&entry.CreatedAtMs,
 		); err != nil {
 			return nil, fmt.Errorf("scan log: %w", err)
 		}
-		t, err := time.Parse(time.RFC3339Nano, createdAt)
-		if err != nil {
-			t = time.Now()
+
+		entry.CreatedAt = parseCreatedAt(createdAt, entry.CreatedAtMs)
+		entry.Context = decodeContext(entry.ContextJSON)
+		entry.RawAction = decodeAction(rawActionJSON)
+		entry.FinalAction = decodeAction(finalActionJSON)
+		if entry.FinalAction.ActionType == "" {
+			entry.FinalAction = decodeAction(entry.ActionJSON)
 		}
-		entry.CreatedAt = t
+		if entry.RawAction.ActionType == "" {
+			entry.RawAction = entry.FinalAction
+		}
+		entry.Action = entry.FinalAction
+		entry.GatewayDecision = decodeGatewayDecision(gatewayDecisionJSON)
+
 		logs = append(logs, entry)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
 	return logs, nil
+}
+
+func (s *Store) ExportRecords(limit int, sinceMs int64) ([]models.ExportRecord, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	if sinceMs < 0 {
+		sinceMs = 0
+	}
+	rows, err := s.db.Query(
+		`SELECT request_id, context_json, raw_action_json, final_action_json, gateway_decision_json, policy_version, model_version, latency_ms, COALESCE(user_feedback, ''), created_at, created_at_ms
+		 FROM event_logs WHERE created_at_ms >= ?
+		 ORDER BY created_at_ms ASC LIMIT ?`,
+		sinceMs,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query export: %w", err)
+	}
+	defer rows.Close()
+
+	var records []models.ExportRecord
+	for rows.Next() {
+		var record models.ExportRecord
+		var contextJSON, rawActionJSON, finalActionJSON, gatewayDecisionJSON, createdAt string
+		if err := rows.Scan(
+			&record.RequestID,
+			&contextJSON,
+			&rawActionJSON,
+			&finalActionJSON,
+			&gatewayDecisionJSON,
+			&record.PolicyVersion,
+			&record.ModelVersion,
+			&record.LatencyMs,
+			&record.UserFeedback,
+			&createdAt,
+			&record.CreatedAtMs,
+		); err != nil {
+			return nil, fmt.Errorf("scan export: %w", err)
+		}
+		record.Context = decodeContext(contextJSON)
+		record.RawAction = decodeAction(rawActionJSON)
+		record.FinalAction = decodeAction(finalActionJSON)
+		record.GatewayDecision = decodeGatewayDecision(gatewayDecisionJSON)
+		if record.RawAction.ActionType == "" {
+			record.RawAction = record.FinalAction
+		}
+		if record.CreatedAtMs == 0 {
+			record.CreatedAtMs = parseCreatedAt(createdAt, 0).UnixMilli()
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return records, nil
+}
+
+func (s *Store) ListSettings() ([]models.SettingItem, error) {
+	rows, err := s.db.Query(`SELECT key, value, updated_at_ms FROM user_settings ORDER BY key ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query settings: %w", err)
+	}
+	defer rows.Close()
+
+	var settings []models.SettingItem
+	for rows.Next() {
+		var item models.SettingItem
+		if err := rows.Scan(&item.Key, &item.Value, &item.UpdatedAtMs); err != nil {
+			return nil, fmt.Errorf("scan setting: %w", err)
+		}
+		settings = append(settings, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return settings, nil
+}
+
+func (s *Store) UpsertSetting(key, value string) error {
+	updatedAt := time.Now().UnixMilli()
+	_, err := s.db.Exec(
+		`INSERT INTO user_settings (key, value, updated_at_ms)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.updated_at_ms`,
+		key,
+		value,
+		updatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert setting: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetSetting(key string) (string, bool, error) {
+	row := s.db.QueryRow(`SELECT value FROM user_settings WHERE key = ?`, key)
+	var value string
+	if err := row.Scan(&value); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("get setting: %w", err)
+	}
+	return value, true, nil
+}
+
+func parseCreatedAt(createdAt string, createdAtMs int64) time.Time {
+	if createdAt != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+			return parsed
+		}
+	}
+	if createdAtMs > 0 {
+		return time.UnixMilli(createdAtMs)
+	}
+	return time.Now()
+}
+
+func decodeContext(raw string) models.Context {
+	var ctx models.Context
+	if raw == "" {
+		return ctx
+	}
+	_ = json.Unmarshal([]byte(raw), &ctx)
+	return ctx
+}
+
+func decodeAction(raw string) models.Action {
+	var action models.Action
+	if raw == "" {
+		return action
+	}
+	_ = json.Unmarshal([]byte(raw), &action)
+	return action
+}
+
+func decodeGatewayDecision(raw string) models.GatewayDecision {
+	var decision models.GatewayDecision
+	if raw == "" {
+		decision.Decision = models.GatewayAllow
+		decision.Reason = "unknown"
+		return decision
+	}
+	if err := json.Unmarshal([]byte(raw), &decision); err != nil {
+		decision.Decision = models.GatewayAllow
+		decision.Reason = "unknown"
+	}
+	return decision
 }

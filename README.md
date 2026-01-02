@@ -24,8 +24,8 @@ Luma is a local-first, desktop companion agent that decides when to gently inter
 ## Goals
 - Local-only execution, no cloud dependency.
 - AI outputs only Action; system operations are blocked by a permission gateway.
-- All decisions/feedback are logged and auditable in SQLite.
-- Policy versioning is explicit for rollback.
+- All decisions/feedback are logged and auditable in SQLite + JSONL export.
+- Policy/model versions are explicit for rollback and offline evaluation.
 
 ## Services & Ports
 - Desktop UI: Vite dev server `http://localhost:5173`
@@ -36,11 +36,22 @@ Luma is a local-first, desktop companion agent that decides when to gently inter
 
 ### 1) Start all services
 ```
+make dev
+```
+
+Or:
+```
 ./scripts/dev.sh
 ```
 
 ### 2) Open the desktop UI
 Electron launches automatically via `npm run dev`.
+
+## Make Targets
+- `make dev`: start all services.
+- `make fmt`: go fmt + frontend lint (if present) + python ruff format.
+- `make test`: go test + python import check + frontend build.
+- `make proto`: placeholder for future gRPC stub generation.
 
 ## API
 
@@ -71,7 +82,9 @@ Response (example):
     "mode": "LIGHT",
     "signals": {
       "hour_of_day": "21",
-      "session_minutes": "40"
+      "session_minutes": "40",
+      "quiet_hours": "23:30-08:00",
+      "intervention_budget": "2"
     },
     "history_summary": ""
   },
@@ -83,8 +96,13 @@ Response (example):
     "risk_level": "LOW"
   },
   "policy_version": "policy_v0",
+  "model_version": "stub",
   "latency_ms": 34,
-  "created_at": "2024-05-10T12:00:00Z"
+  "created_at_ms": 1710000000123,
+  "gateway_decision": {
+    "decision": "ALLOW",
+    "reason": "allow"
+  }
 }
 ```
 
@@ -99,19 +117,68 @@ Response (example):
 ### GET /v1/logs?limit=50
 Returns the latest decision logs.
 
+### GET /v1/settings
+Returns all user settings.
+
+### POST /v1/settings
+```json
+{
+  "key": "quiet_hours",
+  "value": "23:30-08:00"
+}
+```
+Notes:
+- Supported keys: `quiet_hours`, `intervention_budget`.
+- `intervention_budget` accepts `low|medium|high` and is mapped to `1|2|3` in `signals`.
+- `quiet_hours` uses `HH:MM-HH:MM` (e.g., `23:30-08:00`).
+- Python formatting uses `ruff` (installed via `services/ai-py/requirements.txt`).
+
+### GET /v1/export?limit=1000&since_ms=...
+Returns `application/x-ndjson` (JSONL) for offline replay.
+
+## JSONL Export
+Each line contains one decision record for offline evaluation/replay:
+```json
+{"request_id":"b0f2c78e-1aa5-4d4c-9c77-3d7b41b3e8bd","context":{"user_text":"..."},"raw_action":{"action_type":"ENCOURAGE","message":"...","confidence":0.7,"cost":0.2,"risk_level":"LOW"},"final_action":{"action_type":"DO_NOT_DISTURB","message":"...","confidence":1,"cost":0,"risk_level":"LOW"},"gateway_decision":{"decision":"OVERRIDE","reason":"mode_silent_override","overridden_action_type":"ENCOURAGE"},"user_feedback":"LIKE","policy_version":"policy_v0","model_version":"stub","latency_ms":42,"created_at_ms":1710000000123}
+```
+
 ## SQLite Logs
 - DB path: `./data/luma.db`
-- Tables: `event_logs`, `feedback_events`
+- Tables:
+  - `event_logs` (request_id, context_json, raw_action_json, final_action_json, gateway_decision_json, policy_version, model_version, latency_ms, created_at_ms, user_feedback)
+  - `feedback_logs` (request_id, feedback, created_at_ms)
+  - `user_settings` (key, value, updated_at_ms)
 - Example query:
 ```
-sqlite3 ./data/luma.db "select request_id, policy_version, user_feedback, created_at from event_logs order by id desc limit 5;"
+sqlite3 ./data/luma.db "select request_id, policy_version, user_feedback, created_at_ms from event_logs order by created_at_ms desc limit 5;"
 ```
 
 ## Safety & Extensibility
 - AI service only outputs Action; it never executes system operations.
-- Any HIGH risk action is blocked by the Go permission gateway.
-- `policy_version` enables rollback and A/B experiments.
-- The `policy/` module in `services/ai-py` is reserved for future contextual bandit and preference learning.
+- Any HIGH risk action is blocked by the gateway.
+- Policy/model versions are logged for rollback and A/B experiments.
+- The `policy/` module in `services/ai-py` is the entry point for contextual bandit and preference learning.
+- Set `LUMA_POLICY=rule_v0` to select the AI policy (defaults to `rule_v0`).
+
+## Curl Examples
+Decision:
+```
+curl -s http://127.0.0.1:8081/v1/decision \
+  -H "Content-Type: application/json" \
+  -d '{"context":{"user_text":"Need focus","timestamp":1710000000000,"mode":"LIGHT","signals":{},"history_summary":""}}'
+```
+
+Feedback:
+```
+curl -s http://127.0.0.1:8081/v1/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"b0f2c78e-1aa5-4d4c-9c77-3d7b41b3e8bd","feedback":"LIKE"}'
+```
+
+Export:
+```
+curl -s "http://127.0.0.1:8081/v1/export?limit=10&since_ms=0"
+```
 
 ## Project Structure
 ```
@@ -123,4 +190,4 @@ scripts             Dev scripts
 ```
 
 ## gRPC Protocol
-The file `proto/luma.proto` defines Context/Action/Feedback for future gRPC communication. Current MVP uses HTTP with strict validation and retry in the Go client.
+The file `proto/luma.proto` defines Context/Action/Feedback plus Decision/EventLog/GatewayDecision for future gRPC communication. Current MVP uses HTTP with strict validation and retry in the Go client.
