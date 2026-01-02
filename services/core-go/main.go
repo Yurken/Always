@@ -17,7 +17,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	port := getenv("CORE_PORT", "8081")
+	port := getenv("CORE_PORT", "52123")
 	aiURL := getenv("AI_URL", "http://127.0.0.1:8788")
 	dbPath := getenv("DB_PATH", "./data/luma.db")
 

@@ -61,7 +61,7 @@ const formattedMode = computed(() => {
   return mapping[currentMode.value];
 });
 
-const apiBase = "http://127.0.0.1:8081";
+const apiBase = "http://127.0.0.1:52123";
 const panelOpen = ref(false);
 const settingsOpen = ref(false);
 const settingsLoading = ref(false);
@@ -211,6 +211,7 @@ const togglePanel = () => {
 
 const requestAutoSuggestion = async () => {
   if (loading.value) return;
+  console.log('[Luma] 请求AI建议...');
   error.value = "";
   loading.value = true;
   const payload = {
@@ -237,8 +238,11 @@ const requestAutoSuggestion = async () => {
       throw new Error("Decision request failed");
     }
     result.value = data as DecisionResponse;
+    console.log('[Luma] 建议获取成功:', result.value);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "Unknown error";
+    console.error('[Luma] 请求失败:', err);
+    alert(`请求失败: ${error.value}\n\n请确保后端服务已启动:\ncd services/core-go && go run main.go`);
   } finally {
     loading.value = false;
   }
@@ -341,6 +345,10 @@ onBeforeUnmount(() => {
             <button class="primary" :disabled="loading" @click="requestSuggestion">{{ loading ? "..." : "发送" }}</button>
           </div>
 
+          <div v-if="error" class="error-card">
+            <p>❌ {{ error }}</p>
+          </div>
+
           <div v-if="result" class="result-card">
              <p>{{ result.action.message }}</p>
              <div class="feedback-row">
@@ -425,6 +433,14 @@ textarea {
   padding: 8px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.error-card {
+  background: #fee;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #c00;
 }
 
 .result-card {

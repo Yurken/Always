@@ -51,6 +51,7 @@ func NewHandler(store *db.Store, aiClient *ai.Client, focusMonitor *focus.Monito
 func (h *Handler) Router() chi.Router {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
+	r.Use(h.loggingMiddleware)
 	r.Post("/v1/decision", h.handleDecision)
 	r.Post("/v1/feedback", h.handleFeedback)
 	r.Get("/v1/logs", h.handleLogs)
@@ -65,8 +66,14 @@ func (h *Handler) Router() chi.Router {
 func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 	var req models.DecisionRequest
 	if err := decodeJSON(r, &req); err != nil {
+		h.logger.Error("decode request failed", slog.Any("error", err))
 		respondError(w, http.StatusBadRequest, "invalid json")
 		return
+	}
+
+	// Log incoming request
+	if reqJSON, err := json.Marshal(req); err == nil {
+		h.logger.Info("📥 收到请求", slog.String("endpoint", "/v1/decision"), slog.String("body", string(reqJSON)))
 	}
 	if req.RequestID != "" {
 		if _, err := uuid.Parse(req.RequestID); err != nil {
@@ -150,6 +157,11 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 		slog.String("model_version", modelVersion),
 		slog.String("gateway_decision", string(gatewayDecision.Decision)),
 	)
+
+	// Log outgoing response
+	if respJSON, err := json.Marshal(resp); err == nil {
+		h.logger.Info("📤 发送响应", slog.String("request_id", requestID), slog.String("body", string(respJSON)))
+	}
 
 	respondJSON(w, http.StatusOK, resp)
 }
@@ -359,6 +371,23 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func (h *Handler) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		h.logger.Info("📥 收到HTTP请求",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.String("remote", r.RemoteAddr),
+		)
+		next.ServeHTTP(w, r)
+		h.logger.Info("✅ 请求处理完成",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.Duration("duration", time.Since(start)),
+		)
+	})
+}
+
 func decodeJSON(r *http.Request, v any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -371,9 +400,7 @@ func validateContext(ctx models.Context) error {
 		models.ModeLight:  true,
 		models.ModeActive: true,
 	}
-	if strings.TrimSpace(ctx.UserText) == "" {
-		return fmt.Errorf("user_text required")
-	}
+	// user_text is optional - empty string means auto-suggestion request
 	if !validModes[ctx.Mode] {
 		return fmt.Errorf("invalid mode")
 	}

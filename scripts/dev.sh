@@ -20,7 +20,7 @@ if [ ! -d "$DESKTOP_DIR/node_modules" ]; then
   (cd "$DESKTOP_DIR" && npm install)
 fi
 
-export CORE_PORT=${CORE_PORT:-8081}
+export CORE_PORT=${CORE_PORT:-52123}
 export AI_URL=${AI_URL:-http://127.0.0.1:8788}
 
 (

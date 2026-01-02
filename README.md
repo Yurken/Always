@@ -40,26 +40,38 @@ graph TD
 ### 前置依赖
 *   **Node.js** (v18+)
 *   **Go** (v1.21+)
-*   **Python** (v3.10+)
-*   **Ollama** (需安装并拉取模型，如 `ollama pull llama3`)
+*   **Python** (v3.11+, 推荐使用 conda 环境)
+*   **Ollama** (可选，仅在使用 ollama 策略时需要，如 `ollama pull llama3`)
 
 ### 启动服务
 
-1.  **启动所有服务 (开发模式)**
+1.  **创建 Python 环境**（首次使用）
+    ```bash
+    conda create -n luma python=3.11 -y
+    conda activate luma
+    cd services/ai-py && pip install -r requirements.txt
+    ```
+
+2.  **启动所有服务 (开发模式)**
     ```bash
     # 推荐使用脚本一键启动
     ./scripts/dev.sh
     ```
     或者分别启动：
-    *   **Core**: `cd services/core-go && go run main.go` (Port: 8081)
-    *   **AI**: `cd services/ai-py && uvicorn main:app --port 8788`
+    *   **Core**: `cd services/core-go && go run main.go` (Port: 52123)
+    *   **AI**: `conda activate luma && cd services/ai-py && LUMA_POLICY=rule_v0 python -m uvicorn main:app --host 127.0.0.1 --port 8788`
     *   **UI**: `cd apps/desktop && npm run dev`
+    
+    **注意**: 默认使用 `rule_v0` 策略（基于规则，无需 Ollama）。若要使用 Ollama 策略，设置 `LUMA_POLICY=ollama`。
 
-2.  **使用说明**
-    *   启动后，桌面右下角会出现一个悬浮球。
+3.  **使用说明**
+    *   启动后，桌面右上角会出现一个悬浮球。
     *   **悬浮球颜色**: 灰色(静默) / 蓝色(轻度) / 橙色(积极)。
-    *   **点击悬浮球**: 展开主面板，可进行对话或查看状态。
-    *   **AI 建议**: 当 AI 决定介入时，悬浮球下方会弹出气泡提示，可直接反馈。
+    *   **左键单击**: 自动请求 AI 建议并显示 Toast 弹窗。
+    *   **双击**: 展开完整面板，可手动输入内容与 AI 对话。
+    *   **右键**: 打开系统菜单（设置/退出）。
+    *   **拖动**: 移动悬浮球位置。
+    *   **AI 建议**: Toast 弹窗显示建议内容，支持 👍/👎 反馈。
 
 ## 关键模块说明
 
@@ -72,9 +84,11 @@ graph TD
     *   在每次决策时注入最近 5 条关键记忆。
 
 ### 2. AI 服务 (Python)
-*   基于 FastAPI + Ollama。
-*   **Prompt 策略**: 动态注入 `User Profile` 和 `Recent Memories`，使 LLM 具备上下文感知能力。
-*   **结构化输出**: 强制输出 JSON 格式，包含 `action_type`, `confidence`, `risk_level` 等字段。
+*   基于 FastAPI，支持两种策略：
+    *   **rule_v0** (默认): 基于规则和时间的决策，快速响应，无需外部模型。
+    *   **ollama**: 调用本地 Ollama LLM，动态注入 `User Profile` 和 `Recent Memories`，具备上下文感知能力。
+*   **结构化输出**: 输出 JSON 格式，包含 `action_type`, `message`, `confidence`, `cost`, `risk_level` 等字段。
+*   **五种建议类型**: DO_NOT_DISTURB, ENCOURAGE, TASK_BREAKDOWN, REST_REMINDER, REFRAME。
 
 ### 3. 桌面端 (Electron + Vue)
 *   **FloatingBall**: 常驻桌面的轻量级入口，支持拖拽。
@@ -120,9 +134,16 @@ graph TD
 
 ## 开发指南
 
-*   **数据库**: SQLite 文件位于 `data/luma.db`。
-*   **日志**: AI 服务日志位于 `services/ai-py/logs/`。
-*   **配置**: 通过 UI 设置面板调整介入频率与安静时段。
+*   **数据库**: SQLite 文件位于 `services/core-go/data/luma.db`。
+*   **日志**: AI 服务日志位于 `services/ai-py/logs/` 或 `/tmp/luma-ai.log`。
+*   **配置**: 通过 UI 设置面板（右键悬浮球 → 设置）调整介入频率与安静时段。
+
+### 环境变量
+*   `CORE_PORT`: Go 服务端口（默认 52123）
+*   `AI_URL`: AI 服务地址（默认 http://127.0.0.1:8788）
+*   `LUMA_POLICY`: AI 策略选择，可选 `rule_v0` 或 `ollama`（默认 ollama）
+*   `OLLAMA_MODEL`: Ollama 模型名称（默认 llama3）
+*   `OLLAMA_URL`: Ollama API 地址（默认 http://localhost:11434/api/generate）
 
 ## License
 MIT
