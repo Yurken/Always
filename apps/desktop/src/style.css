@@ -3,7 +3,7 @@
 :root {
   font-family: "Space Grotesk", sans-serif;
   color: #111827;
-  background: radial-gradient(circle at top left, #fff6e1, #f2f6ff 40%, #e9f7ef 100%);
+  background: transparent;
 }
 
 * {
@@ -13,23 +13,45 @@
 body {
   margin: 0;
   min-height: 100vh;
+  background: transparent;
 }
 
 #app {
   min-height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 16px;
 }
 
-.card {
-  width: min(900px, 100%);
+.floating-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.orb {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle at 30% 30%, #fef3c7, #f97316);
+  color: #111827;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 20px rgba(17, 24, 39, 0.25);
+}
+
+.panel {
+  width: 320px;
   background: #ffffffee;
   border: 1px solid #e5e7eb;
   border-radius: 18px;
-  padding: 28px;
-  box-shadow: 0 20px 40px rgba(17, 24, 39, 0.08);
+  padding: 20px;
+  box-shadow: 0 20px 40px rgba(17, 24, 39, 0.12);
 }
 
 .header {
@@ -41,7 +63,7 @@ body {
 
 h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 20px;
 }
 
 .mode {
@@ -68,7 +90,7 @@ textarea {
   border-radius: 12px;
   border: 1px solid #d1d5db;
   padding: 12px;
-  min-height: 110px;
+  min-height: 90px;
   font-family: inherit;
 }
 

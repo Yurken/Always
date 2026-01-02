@@ -63,7 +63,7 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 	if action.RiskLevel == models.RiskHigh {
 		action = models.Action{
 			ActionType: models.ActionDoNotDisturb,
-			Message:    "High-risk action blocked by gateway.",
+			Message:    "高风险动作已被权限网关拦截。",
 			Confidence: 1,
 			Cost:       0,
 			RiskLevel:  models.RiskLow,

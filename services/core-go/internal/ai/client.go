@@ -41,8 +41,8 @@ func (c *Client) Decide(ctx models.Context) (models.Action, string, error) {
 			backoff(attempt)
 			continue
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode >= 400 {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("ai status: %s", resp.Status)
 			backoff(attempt)
 			continue
@@ -52,10 +52,12 @@ func (c *Client) Decide(ctx models.Context) (models.Action, string, error) {
 			PolicyVersion string        `json:"policy_version"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("decode ai response: %w", err)
 			backoff(attempt)
 			continue
 		}
+		resp.Body.Close()
 		if err := validateAction(parsed.Action); err != nil {
 			return models.Action{}, "", err
 		}
@@ -83,12 +85,13 @@ func (c *Client) Feedback(reqID, feedback string) error {
 			backoff(attempt)
 			continue
 		}
-		resp.Body.Close()
 		if resp.StatusCode >= 400 {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("ai status: %s", resp.Status)
 			backoff(attempt)
 			continue
 		}
+		resp.Body.Close()
 		return nil
 	}
 

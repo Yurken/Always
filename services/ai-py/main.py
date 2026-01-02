@@ -38,7 +38,7 @@ def choose_action(context: Context) -> Tuple[Action, str]:
         return (
             Action(
                 action_type=ActionType.DO_NOT_DISTURB,
-                message="Staying quiet. You can ask for help anytime.",
+                message="保持安静。如果需要帮助，随时告诉我。",
                 confidence=0.82,
                 cost=0.1,
                 risk_level=RiskLevel.LOW,
@@ -49,9 +49,9 @@ def choose_action(context: Context) -> Tuple[Action, str]:
     if 23 <= hour or hour <= 5:
         action_type = random.choice([ActionType.REST_REMINDER, ActionType.ENCOURAGE])
         message = (
-            "It is late. A short break or stretch might help keep you steady."
+            "时间有点晚了，建议做个短暂休息或伸展一下。"
             if action_type == ActionType.REST_REMINDER
-            else "Late night work is tough. You are doing your best."
+            else "深夜工作很辛苦，你已经做得很好了。"
         )
         return (
             Action(
@@ -68,9 +68,9 @@ def choose_action(context: Context) -> Tuple[Action, str]:
     if any(k in user_text for k in keywords):
         action_type = random.choice([ActionType.TASK_BREAKDOWN, ActionType.REFRAME])
         message = (
-            "Try listing the next three smallest steps to reduce pressure."
+            "可以先列出接下来三个最小的步骤，降低压力。"
             if action_type == ActionType.TASK_BREAKDOWN
-            else "This feels heavy, but you have handled hard things before."
+            else "这件事很重，但你以前也扛过困难。"
         )
         return (
             Action(
@@ -87,9 +87,9 @@ def choose_action(context: Context) -> Tuple[Action, str]:
         [ActionType.ENCOURAGE, ActionType.DO_NOT_DISTURB, ActionType.REST_REMINDER]
     )
     message_map = {
-        ActionType.ENCOURAGE: "Keep going. Small progress counts.",
-        ActionType.DO_NOT_DISTURB: "No action for now. I am here if you need me.",
-        ActionType.REST_REMINDER: "Consider a short pause to reset your focus.",
+        ActionType.ENCOURAGE: "继续加油，小进步也很重要。",
+        ActionType.DO_NOT_DISTURB: "暂时不介入，需要时我会在。",
+        ActionType.REST_REMINDER: "可以短暂休息一下，帮助恢复专注。",
     }
     return (
         Action(

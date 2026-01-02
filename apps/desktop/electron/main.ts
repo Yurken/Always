@@ -5,8 +5,13 @@ const DEV_SERVER_URL = "http://localhost:5173";
 
 const createWindow = () => {
   const win = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 360,
+    height: 520,
+    resizable: false,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },

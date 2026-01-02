@@ -34,10 +34,17 @@ const loading = ref(false);
 const error = ref("");
 
 const formattedMode = computed(() => {
-  return currentMode.value.charAt(0) + currentMode.value.slice(1).toLowerCase();
+  const mapping: Record<Mode, string> = {
+    SILENT: "静默",
+    LIGHT: "轻度",
+    ACTIVE: "积极",
+  };
+  return mapping[currentMode.value];
 });
 
 const apiBase = "http://127.0.0.1:8081";
+const panelOpen = ref(false);
+const settingsOpen = ref(false);
 
 const requestSuggestion = async () => {
   error.value = "";
@@ -85,60 +92,83 @@ const sendFeedback = async (feedback: "LIKE" | "DISLIKE") => {
     }),
   });
 };
+
+const togglePanel = () => {
+  panelOpen.value = !panelOpen.value;
+  if (!panelOpen.value) {
+    settingsOpen.value = false;
+  }
+};
+
+const openSettings = () => {
+  panelOpen.value = true;
+  settingsOpen.value = true;
+};
 </script>
 
 <template>
-  <div class="card">
-    <div class="header">
-      <div>
-        <h1>Luma Companion</h1>
-        <p>Current mode: {{ formattedMode }}</p>
+  <div class="floating-shell">
+    <button
+      class="orb"
+      title="Luma"
+      @click="togglePanel"
+      @contextmenu.prevent="openSettings"
+    >
+      L
+    </button>
+
+    <div v-if="panelOpen" class="panel">
+      <div class="header">
+        <div>
+          <h1>Luma 陪伴助手</h1>
+          <p>当前模式：{{ formattedMode }}</p>
+        </div>
+        <div class="mode">
+          <button
+            v-for="mode in modes"
+            :key="mode"
+            :class="{ active: mode === currentMode }"
+            @click="currentMode = mode"
+          >
+            {{ mode }}
+          </button>
+        </div>
       </div>
-      <div class="mode">
-        <button
-          v-for="mode in modes"
-          :key="mode"
-          :class="{ active: mode === currentMode }"
-          @click="currentMode = mode"
-        >
-          {{ mode }}
+
+      <textarea
+        v-model="userText"
+        placeholder="描述你当前的状态或任务..."
+      />
+
+      <div class="actions">
+        <button class="primary" :disabled="loading" @click="requestSuggestion">
+          {{ loading ? "请求中..." : "请求建议" }}
         </button>
+        <button class="secondary" @click="userText = ''">清空</button>
       </div>
-    </div>
 
-    <textarea
-      v-model="userText"
-      placeholder="Describe what you are working on..."
-    />
-
-    <div class="actions">
-      <button class="primary" :disabled="loading" @click="requestSuggestion">
-        {{ loading ? "Requesting..." : "Request suggestion" }}
-      </button>
-      <button class="secondary" @click="userText = ''">Clear</button>
-    </div>
-
-    <div v-if="error" class="result">
-      <h3>Request error</h3>
-      <p>{{ error }}</p>
-    </div>
-
-    <div v-if="result" class="result">
-      <h3>Suggestion</h3>
-      <p>{{ result.action.message }}</p>
-      <p>
-        Type: {{ result.action.action_type }} | Confidence:
-        {{ result.action.confidence }} | Risk: {{ result.action.risk_level }}
-      </p>
-      <div class="feedback">
-        <button class="secondary" @click="sendFeedback('LIKE')">Like</button>
-        <button class="secondary" @click="sendFeedback('DISLIKE')">Dislike</button>
+      <div v-if="error" class="result">
+        <h3>请求失败</h3>
+        <p>{{ error }}</p>
       </div>
-    </div>
 
-    <div class="settings">
-      <strong>Settings (placeholder)</strong>
-      <p>Intervention frequency, sensitivity, and schedule will appear here.</p>
+      <div v-if="result" class="result">
+        <h3>建议卡片</h3>
+        <p>{{ result.action.message }}</p>
+        <p>
+          类型：{{ result.action.action_type }} | 置信度：
+          {{ result.action.confidence }} | 风险：{{ result.action.risk_level }}
+        </p>
+        <div class="feedback">
+          <button class="secondary" @click="sendFeedback('LIKE')">赞同</button>
+          <button class="secondary" @click="sendFeedback('DISLIKE')">不赞同</button>
+        </div>
+      </div>
+
+      <div v-if="settingsOpen" class="settings">
+        <strong>设置（占位）</strong>
+        <p>这里将加入介入频率、敏感度、时间段等设置。</p>
+      </div>
     </div>
   </div>
 </template>

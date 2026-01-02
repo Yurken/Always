@@ -2,13 +2,13 @@
   "name": "luma-desktop",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev:renderer": "vite",
     "dev:main": "tsc -p electron/tsconfig.json --watch",
     "dev:electron": "wait-on dist-electron/main.js && electron dist-electron/main.js",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:main\" \"npm:dev:electron\"",
+    "start": "concurrently -k \"npm:dev\" \"sh -c 'cd ../../services/core-go && go run main.go'\"",
     "build:main": "tsc -p electron/tsconfig.json",
     "build": "vite build"
   },
