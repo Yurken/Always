@@ -8,36 +8,53 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "click"): void;
+  (e: "dblclick"): void;
   (e: "drag-end", x: number, y: number): void;
 }>();
 
 const orbRef = ref<HTMLElement | null>(null);
 const dragging = ref(false);
 const dragMoved = ref(false);
-const dragStart = ref({ x: 0, y: 0 });
+const dragStart = ref({ x: 0, y: 0, winX: 0, winY: 0 });
 
 const handleMouseDown = (e: MouseEvent) => {
-  if (e.button !== 0) return;
+  if (e.button !== 0) return; // Only left click for drag
+  e.preventDefault();
+  
   dragging.value = true;
   dragMoved.value = false;
-  dragStart.value = { x: e.screenX, y: e.screenY };
+  dragStart.value = { 
+    x: e.screenX, 
+    y: e.screenY,
+    winX: window.screenX,
+    winY: window.screenY
+  };
   
-  // Tell main process to start moving window if needed, 
-  // but here we just track delta for click vs drag distinction
   window.addEventListener("mousemove", handleMouseMove);
   window.addEventListener("mouseup", handleMouseUp);
 };
 
+const handleDblClick = (e: MouseEvent) => {
+  e.preventDefault();
+  emit("dblclick");
+};
+
 const handleMouseMove = (e: MouseEvent) => {
   if (!dragging.value) return;
-  const dx = Math.abs(e.screenX - dragStart.value.x);
-  const dy = Math.abs(e.screenY - dragStart.value.y);
-  if (dx > 5 || dy > 5) {
+  
+  const dx = e.screenX - dragStart.value.x;
+  const dy = e.screenY - dragStart.value.y;
+  
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
     dragMoved.value = true;
-    // In a real Electron app with frameless window, 
-    // we usually use -webkit-app-region: drag or IPC to move window.
-    // Assuming parent handles window movement via IPC based on this element's drag.
-    // For now, we just track state.
+    
+    // Move window via IPC
+    const newX = dragStart.value.winX + dx;
+    const newY = dragStart.value.winY + dy;
+    
+    if ((window as any).luma?.moveWindow) {
+      (window as any).luma.moveWindow(newX, newY);
+    }
   }
 };
 
@@ -50,6 +67,7 @@ const handleMouseUp = () => {
     emit("click");
   }
 };
+
 </script>
 
 <template>
@@ -63,6 +81,7 @@ const handleMouseUp = () => {
       'orb-loading': loading,
     }"
     @mousedown="handleMouseDown"
+    @dblclick="handleDblClick"
   >
     <div class="orb-inner"></div>
     <div class="orb-ring"></div>
@@ -75,14 +94,13 @@ const handleMouseUp = () => {
   height: 48px;
   border-radius: 50%;
   position: relative;
-  cursor: grab;
+  cursor: pointer;
   transition: transform 0.2s, filter 0.3s;
-  /* Electron drag region handled by parent or CSS class if fixed */
-  -webkit-app-region: drag; 
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .orb:active {
-  cursor: grabbing;
   transform: scale(0.95);
 }
 

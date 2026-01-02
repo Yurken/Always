@@ -68,7 +68,7 @@ const settingsLoading = ref(false);
 const settingsSaving = ref(false);
 const settingsError = ref("");
 const isSettingsWindow = ref(false);
-const ignoreMouseEvents = ref(false);
+const ignoreMouseEvents = ref(true);
 const focusMonitorEnabled = ref(false);
 const focusCurrent = ref<FocusCurrent | null>(null);
 const focusError = ref("");
@@ -209,6 +209,41 @@ const togglePanel = () => {
   panelOpen.value = !panelOpen.value;
 };
 
+const requestAutoSuggestion = async () => {
+  if (loading.value) return;
+  error.value = "";
+  loading.value = true;
+  const payload = {
+    context: {
+      user_text: "",
+      timestamp: Date.now(),
+      mode: currentMode.value,
+      signals: {
+        hour_of_day: new Date().getHours().toString(),
+        session_minutes: "0",
+      },
+      history_summary: "",
+    },
+  };
+
+  try {
+    const res = await fetch(`${apiBase}/v1/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json().catch(() => null)) as unknown;
+    if (!res.ok) {
+      throw new Error("Decision request failed");
+    }
+    result.value = data as DecisionResponse;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "Unknown error";
+  } finally {
+    loading.value = false;
+  }
+};
+
 const setIgnoreMouse = (ignore: boolean) => {
   if (ignoreMouseEvents.value === ignore) return;
   ignoreMouseEvents.value = ignore;
@@ -217,16 +252,23 @@ const setIgnoreMouse = (ignore: boolean) => {
   }
 };
 
-const handlePointerMove = (event: PointerEvent) => {
+const handlePointerMove = (event: MouseEvent) => {
   if (isSettingsWindow.value) return;
-  const target = document.elementFromPoint(event.clientX, event.clientY);
+  const withinViewport =
+    event.clientX >= 0 &&
+    event.clientX <= window.innerWidth &&
+    event.clientY >= 0 &&
+    event.clientY <= window.innerHeight;
+  const localX = withinViewport ? event.clientX : event.screenX - window.screenX;
+  const localY = withinViewport ? event.clientY : event.screenY - window.screenY;
+  const target = document.elementFromPoint(localX, localY);
   const isInteractive = !!target?.closest(".orb, .panel, .toast-card");
   setIgnoreMouse(!isInteractive);
 };
 
 onMounted(() => {
-  window.addEventListener("pointermove", handlePointerMove);
-  window.addEventListener("pointerdown", handlePointerMove);
+  window.addEventListener("mousemove", handlePointerMove);
+  window.addEventListener("mousedown", handlePointerMove);
   const params = new URLSearchParams(window.location.search);
   if (params.get("settings") === "1") {
     isSettingsWindow.value = true;
@@ -243,8 +285,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("pointermove", handlePointerMove);
-  window.removeEventListener("pointerdown", handlePointerMove);
+  window.removeEventListener("mousemove", handlePointerMove);
+  window.removeEventListener("mousedown", handlePointerMove);
   if (focusTimer) clearInterval(focusTimer);
 });
 </script>
@@ -273,7 +315,8 @@ onBeforeUnmount(() => {
       <FloatingBall 
         :mode="currentMode" 
         :loading="loading" 
-        @click="togglePanel" 
+        @click="requestAutoSuggestion" 
+        @dblclick="togglePanel"
       />
       
       <SuggestionToast
@@ -330,14 +373,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 }
 
 .widget-container {
-  position: relative;
+  position: fixed;
+  top: 10px;
+  right: 10px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
+  z-index: 1000;
 }
 
 .panel {
+  position: static;
   width: 300px;
   background: white;
   border-radius: 12px;
