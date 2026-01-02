@@ -18,11 +18,15 @@ const createWindow = () => {
     backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      webSecurity: false, // 允许跨域请求
     },
   });
 
   win.loadURL(DEV_SERVER_URL);
   win.setIgnoreMouseEvents(true, { forward: true });
+
+  // 自动打开开发者工具
+  win.webContents.openDevTools({ mode: 'detach' });
 
   attachContextMenu(win);
   return win;
@@ -42,6 +46,7 @@ const createSettingsWindow = () => {
     backgroundColor: "#f3f4f6",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      webSecurity: false, // 允许跨域请求
     },
   });
 

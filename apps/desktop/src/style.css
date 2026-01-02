@@ -424,6 +424,10 @@ textarea:focus {
   color: var(--text-secondary);
 }
 
+.settings-warning {
+  color: #b45309;
+}
+
 .settings-grid {
   display: grid;
   gap: 20px;
@@ -499,6 +503,57 @@ textarea:focus {
 .time-range input:focus {
   outline: none;
   border-color: var(--primary-color);
+}
+
+.settings-input {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #ffffff;
+  color: var(--text-main);
+  width: 100%;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.model-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.model-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+.model-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.15s ease;
+}
+
+.model-option:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.settings-success {
+  color: #059669;
 }
 
 .settings-actions {

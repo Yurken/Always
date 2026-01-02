@@ -8,7 +8,7 @@ Luma 是一个本地优先（Local-first）的桌面陪伴 Agent，旨在通过�
 *   **长期记忆**: 基于 SQLite 的本地记忆系统，能记住你的工作习惯、偏好（Profile）以及近期关键事件（Memory Events）。
 *   **智能网关**: 内置“介入预算”与“冷却机制”，防止 AI 过度打扰。
 *   **反馈闭环**: 支持对建议进行 👍/👎 反馈，系统会自动调整后续策略并更新用户画像。
-*   **隐私安全**: 所有数据（屏幕活动、记忆、日志）均存储在本地，推理默认使用本地 Ollama 模型。
+*   **隐私安全**: 所有数据（屏幕活动、记忆、日志）均存储在本地，推理使用本地 Ollama 模型。
 
 ## 架构概览
 
@@ -41,7 +41,7 @@ graph TD
 *   **Node.js** (v18+)
 *   **Go** (v1.21+)
 *   **Python** (v3.11+, 推荐使用 conda 环境)
-*   **Ollama** (可选，仅在使用 ollama 策略时需要，如 `ollama pull llama3`)
+*   **Ollama** (必需，如 `ollama pull llama3.1:8b`)
 
 ### 启动服务
 
@@ -57,12 +57,13 @@ graph TD
     # 推荐使用脚本一键启动
     ./scripts/dev.sh
     ```
+    开发日志输出到 `logs/dev/`（ai.log、core.log、desktop.log），方便排查错误。
     或者分别启动：
     *   **Core**: `cd services/core-go && go run main.go` (Port: 52123)
-    *   **AI**: `conda activate luma && cd services/ai-py && LUMA_POLICY=rule_v0 python -m uvicorn main:app --host 127.0.0.1 --port 8788`
+    *   **AI**: `conda activate luma && cd services/ai-py && python -m uvicorn main:app --host 127.0.0.1 --port 8788`
     *   **UI**: `cd apps/desktop && npm run dev`
     
-    **注意**: 默认使用 `rule_v0` 策略（基于规则，无需 Ollama）。若要使用 Ollama 策略，设置 `LUMA_POLICY=ollama`。
+    **注意**: 默认使用 Ollama 策略；若设置为其他值，将提示无可用环境。
 
 3.  **使用说明**
     *   启动后，桌面右上角会出现一个悬浮球。
@@ -84,8 +85,7 @@ graph TD
     *   在每次决策时注入最近 5 条关键记忆。
 
 ### 2. AI 服务 (Python)
-*   基于 FastAPI，支持两种策略：
-    *   **rule_v0** (默认): 基于规则和时间的决策，快速响应，无需外部模型。
+*   基于 FastAPI，当前策略：
     *   **ollama**: 调用本地 Ollama LLM，动态注入 `User Profile` 和 `Recent Memories`，具备上下文感知能力。
 *   **结构化输出**: 输出 JSON 格式，包含 `action_type`, `message`, `confidence`, `cost`, `risk_level` 等字段。
 *   **五种建议类型**: DO_NOT_DISTURB, ENCOURAGE, TASK_BREAKDOWN, REST_REMINDER, REFRAME。
@@ -137,13 +137,15 @@ graph TD
 *   **数据库**: SQLite 文件位于 `services/core-go/data/luma.db`。
 *   **日志**: AI 服务日志位于 `services/ai-py/logs/` 或 `/tmp/luma-ai.log`。
 *   **配置**: 通过 UI 设置面板（右键悬浮球 → 设置）调整介入频率与安静时段。
+    *   支持选择 Ollama 模型（从本地 Ollama 自动读取，需与 `ollama list` 一致），保存后生效。
 
 ### 环境变量
 *   `CORE_PORT`: Go 服务端口（默认 52123）
 *   `AI_URL`: AI 服务地址（默认 http://127.0.0.1:8788）
-*   `LUMA_POLICY`: AI 策略选择，可选 `rule_v0` 或 `ollama`（默认 ollama）
-*   `OLLAMA_MODEL`: Ollama 模型名称（默认 llama3）
+*   `LUMA_POLICY`: AI 策略选择，可选 `ollama`（默认 ollama）
+*   `OLLAMA_MODEL`: Ollama 模型名称（默认 llama3.1:8b）
 *   `OLLAMA_URL`: Ollama API 地址（默认 http://localhost:11434/api/generate）
+*   **超时**: Core 调 AI 默认超时 60s；AI 调 Ollama 默认超时 60s（模型首次加载可能较慢）。
 
 ## License
 MIT

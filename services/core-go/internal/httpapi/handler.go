@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,12 +28,14 @@ const (
 	settingQuietHours         = "quiet_hours"
 	settingInterventionBudget = "intervention_budget"
 	settingFocusMonitor       = "focus_monitor_enabled"
+	settingOllamaModel        = "ollama_model"
 )
 
 var allowedSettings = map[string]bool{
 	settingQuietHours:         true,
 	settingInterventionBudget: true,
 	settingFocusMonitor:       true,
+	settingOllamaModel:        true,
 }
 
 type Handler struct {
@@ -58,6 +62,7 @@ func (h *Handler) Router() chi.Router {
 	r.Get("/v1/focus/current", h.handleFocusCurrent)
 	r.Get("/v1/focus/recent", h.handleFocusRecent)
 	r.Get("/v1/export", h.handleExport)
+	r.Get("/v1/ollama/models", h.handleOllamaModels)
 	r.Get("/v1/settings", h.handleSettingsGet)
 	r.Post("/v1/settings", h.handleSettingsPost)
 	return r
@@ -432,6 +437,45 @@ func (h *Handler) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (h *Handler) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
+	tagsURL := ollamaTagsURL()
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, tagsURL, nil)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "ollama request error")
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "ollama unavailable")
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respondError(w, http.StatusBadGateway, "ollama unavailable")
+		return
+	}
+
+	var payload struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		respondError(w, http.StatusBadGateway, "ollama invalid response")
+		return
+	}
+
+	models := make([]string, 0, len(payload.Models))
+	for _, m := range payload.Models {
+		name := strings.TrimSpace(m.Name)
+		if name == "" {
+			continue
+		}
+		models = append(models, name)
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
 func respondJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -450,6 +494,28 @@ func parseInt(val string) (int, error) {
 
 func parseInt64(val string) (int64, error) {
 	return strconv.ParseInt(val, 10, 64)
+}
+
+func ollamaTagsURL() string {
+	raw := os.Getenv("OLLAMA_URL")
+	if raw == "" {
+		return "http://localhost:11434/api/tags"
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "http://localhost:11434/api/tags"
+	}
+	path := strings.TrimSuffix(parsed.Path, "/")
+	if strings.HasSuffix(path, "/api/tags") {
+		return parsed.String()
+	}
+	if strings.HasSuffix(path, "/api/generate") {
+		path = strings.TrimSuffix(path, "/generate")
+	} else if !strings.HasSuffix(path, "/api") {
+		path = path + "/api"
+	}
+	parsed.Path = path + "/tags"
+	return parsed.String()
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -556,6 +622,14 @@ func enrichSignals(store *db.Store, focusMonitor *focus.Monitor, payload *models
 		}
 	}
 
+	modelSetting, ok, err := store.GetSetting(settingOllamaModel)
+	if err != nil {
+		return err
+	}
+	if ok && modelSetting != "" {
+		payload.Signals["ollama_model"] = modelSetting
+	}
+
 	if focusMonitor != nil && focusMonitor.Enabled() {
 		current, ok, err := focusMonitor.Current()
 		if err != nil {
@@ -613,6 +687,11 @@ func normalizeSettingValue(key, value string) (string, error) {
 		default:
 			return "", fmt.Errorf("invalid focus_monitor_enabled")
 		}
+	case settingOllamaModel:
+		if trimmed == "" {
+			return "", fmt.Errorf("invalid ollama_model")
+		}
+		return trimmed, nil
 	default:
 		return trimmed, nil
 	}

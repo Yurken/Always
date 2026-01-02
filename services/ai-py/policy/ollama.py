@@ -13,28 +13,37 @@ class OllamaPolicy(Policy):
     name = "ollama_v0"
 
     def __init__(self):
-        self.model = os.getenv("OLLAMA_MODEL", "llama3")
+        self.model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
         self.api_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 
     def decide(self, context: Context) -> Tuple[Action, str, str]:
         prompt = self._build_prompt(context)
+        model = self.model
+        if context.signals:
+            override_model = context.signals.get("ollama_model", "").strip()
+            if override_model:
+                model = override_model
         
         try:
+            logger.info(f"🤖 Calling Ollama model={model}")
             response = requests.post(
                 self.api_url,
                 json={
-                    "model": self.model,
+                    "model": model,
                     "prompt": prompt,
                     "stream": False,
                     "format": "json"
                 },
-                timeout=10
+                timeout=60
             )
             response.raise_for_status()
             data = response.json()
             content = data.get("response", "")
             
+            logger.info(f"📥 Ollama raw response: {content}")
+            
             action_data = json.loads(content)
+            logger.info(f"✅ Parsed action: {json.dumps(action_data, ensure_ascii=False)}")
             
             action = Action(
                 action_type=action_data.get("action_type", "DO_NOT_DISTURB"),
@@ -43,7 +52,7 @@ class OllamaPolicy(Policy):
                 cost=float(action_data.get("cost", 0.0)),
                 risk_level=action_data.get("risk_level", "LOW")
             )
-            return action, self.name, self.model
+            return action, self.name, model
             
         except Exception as e:
             logger.error(f"Ollama call failed: {e}")
