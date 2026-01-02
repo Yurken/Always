@@ -64,11 +64,31 @@ jobs:
           ls -l ../../apps/desktop/bin/
 
       # --- Build Electron App ---
+      - name: Extract version from tag
+        id: get_version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            VERSION="0.1.0-dev"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+          echo "Building version: $VERSION"
+      
+      - name: Update package.json version
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          npm version ${{ steps.get_version.outputs.version }} --no-git-tag-version
+      
       - name: Build Electron App
         working-directory: apps/desktop
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ steps.get_version.outputs.version }}
         run: |
           npm ci
           npm run dist
