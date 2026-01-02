@@ -59,6 +59,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_event_logs_request_id ON event_logs (reque
 CREATE INDEX IF NOT EXISTS idx_event_logs_created_at_ms ON event_logs (created_at_ms);
 CREATE INDEX IF NOT EXISTS idx_feedback_logs_request_id ON feedback_logs (request_id);
 CREATE INDEX IF NOT EXISTS idx_focus_events_ts_ms ON focus_events (ts_ms);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  confidence REAL DEFAULT 1.0,
+  updated_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  importance REAL DEFAULT 0.5
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_events_type ON memory_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_memory_events_created ON memory_events (created_at_ms);
 `
 
 type Store struct {
@@ -83,6 +101,10 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("apply migrations: %w", err)
 	}
 	return &Store{db: db}, nil
+}
+
+func (s *Store) DB() *sql.DB {
+	return s.db
 }
 
 func applyMigrations(db *sql.DB) error {

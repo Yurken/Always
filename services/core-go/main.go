@@ -11,6 +11,7 @@ import (
 	"luma/core/internal/db"
 	"luma/core/internal/focus"
 	"luma/core/internal/httpapi"
+	"luma/core/internal/memory"
 )
 
 func main() {
@@ -30,7 +31,8 @@ func main() {
 	focusMonitor := focus.NewMonitor(store, logger, focusInterval())
 	focusMonitor.Start()
 
-	handler := httpapi.NewHandler(store, aiClient, focusMonitor, logger)
+	memoryService := memory.NewService(store.DB(), logger)
+	handler := httpapi.NewHandler(store, aiClient, focusMonitor, memoryService, logger)
 
 	server := &http.Server{
 		Addr:         ":" + port,

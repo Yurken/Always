@@ -29,6 +29,8 @@ class Context(BaseModel):
     mode: Mode
     signals: Dict[str, str] = Field(default_factory=dict)
     history_summary: Optional[str] = ""
+    profile_summary: Optional[str] = ""
+    memory_summary: Optional[str] = ""
 
 
 class Action(BaseModel):

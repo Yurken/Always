@@ -18,6 +18,7 @@ import (
 	"luma/core/internal/db"
 	"luma/core/internal/focus"
 	"luma/core/internal/gateway"
+	"luma/core/internal/memory"
 	"luma/core/internal/models"
 )
 
@@ -34,14 +35,17 @@ var allowedSettings = map[string]bool{
 }
 
 type Handler struct {
-	store  *db.Store
-	ai     *ai.Client
-	focus  *focus.Monitor
-	logger *slog.Logger
+	store   *db.Store
+	ai      *ai.Client
+	focus   *focus.Monitor
+	memory  *memory.Service
+	gateway *gateway.Gateway
+	logger  *slog.Logger
 }
 
-func NewHandler(store *db.Store, aiClient *ai.Client, focusMonitor *focus.Monitor, logger *slog.Logger) *Handler {
-	return &Handler{store: store, ai: aiClient, focus: focusMonitor, logger: logger}
+func NewHandler(store *db.Store, aiClient *ai.Client, focusMonitor *focus.Monitor, memoryService *memory.Service, logger *slog.Logger) *Handler {
+	gw := gateway.New(logger)
+	return &Handler{store: store, ai: aiClient, focus: focusMonitor, memory: memoryService, gateway: gw, logger: logger}
 }
 
 func (h *Handler) Router() chi.Router {
@@ -91,6 +95,9 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "settings error")
 		return
 	}
+	// Inject Memory
+	req.Context.ProfileSummary = h.memory.GetProfileSummary()
+	req.Context.MemorySummary = h.memory.GetRecentEvents(5)
 
 	start := time.Now()
 	rawAction, policyVersion, modelVersion, err := h.ai.Decide(req.Context, requestID)
@@ -101,7 +108,7 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	finalAction, gatewayDecision := gateway.Evaluate(req.Context, rawAction)
+	finalAction, gatewayDecision := h.gateway.Evaluate(req.Context, rawAction)
 	createdAt := time.Now()
 
 	resp := models.DecisionResponse{
@@ -176,6 +183,11 @@ func (h *Handler) handleFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.ai.Feedback(req.RequestID, string(req.Feedback)); err != nil {
 		h.logger.Error("forward feedback failed", slog.String("request_id", req.RequestID), slog.Any("error", err))
+	}
+
+	// Update Memory
+	if err := h.memory.ProcessFeedback(req.RequestID, string(req.Feedback)); err != nil {
+		h.logger.Error("process feedback failed", slog.String("request_id", req.RequestID), slog.Any("error", err))
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})

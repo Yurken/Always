@@ -51,6 +51,8 @@ type Context struct {
 	Mode           Mode              `json:"mode"`
 	Signals        map[string]string `json:"signals"`
 	HistorySummary string            `json:"history_summary"`
+	ProfileSummary string            `json:"profile_summary"`
+	MemorySummary  string            `json:"memory_summary"`
 }
 
 type Action struct {
