@@ -569,6 +569,21 @@ textarea:focus {
   font-size: 12px;
 }
 
+.learning-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.learning-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 .budget-grid {
   display: grid;
   gap: 10px;

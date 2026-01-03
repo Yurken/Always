@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 type Action = {
   action_type: string;
@@ -20,11 +20,30 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "feedback", type: "LIKE" | "DISLIKE"): void;
   (e: "sendMessage", text: string): void;
+  (e: "implicitFeedback", type: "IGNORED" | "CLOSED"): void;
 }>();
-// TODO: Emit implicit feedback events (closed/ignored/opened panel) for learning.
 
 const showTextInput = ref(false);
 const feedbackText = ref("");
+const ignoreDelayMs = 20000;
+let ignoreTimer: number | undefined;
+
+const clearIgnoreTimer = () => {
+  if (ignoreTimer) {
+    clearTimeout(ignoreTimer);
+    ignoreTimer = undefined;
+  }
+};
+
+const scheduleIgnoreTimer = () => {
+  if (!props.visible || !props.action) {
+    return;
+  }
+  clearIgnoreTimer();
+  ignoreTimer = window.setTimeout(() => {
+    emit("implicitFeedback", "IGNORED");
+  }, ignoreDelayMs);
+};
 
 // Watch for new action (reply) and keep text input open
 watch(() => props.action, (newAction, oldAction) => {
@@ -36,12 +55,30 @@ watch(() => props.action, (newAction, oldAction) => {
   }
 });
 
+watch(
+  () => [props.visible, props.action],
+  ([visible, action]) => {
+    if (visible && action) {
+      scheduleIgnoreTimer();
+    } else {
+      clearIgnoreTimer();
+    }
+  },
+  { immediate: true }
+);
+
+onBeforeUnmount(() => {
+  clearIgnoreTimer();
+});
+
 const handleQuickFeedback = (type: "LIKE" | "DISLIKE") => {
+  clearIgnoreTimer();
   emit("feedback", type);
 };
 
 const handleSendMessage = () => {
   if (feedbackText.value.trim()) {
+    clearIgnoreTimer();
     emit("sendMessage", feedbackText.value.trim());
     feedbackText.value = "";
     // Keep showTextInput open to continue conversation
@@ -49,10 +86,17 @@ const handleSendMessage = () => {
 };
 
 const toggleTextInput = () => {
+  clearIgnoreTimer();
   showTextInput.value = !showTextInput.value;
   if (!showTextInput.value) {
     feedbackText.value = "";
   }
+};
+
+const handleClose = () => {
+  clearIgnoreTimer();
+  emit("implicitFeedback", "CLOSED");
+  emit("close");
 };
 
 const actionColor = computed(() => {
@@ -90,7 +134,7 @@ const reasonText = computed(() => {
     <div v-if="visible && action" class="toast-card">
       <div class="toast-header" :style="{ backgroundColor: actionColor }">
         <span class="toast-type">{{ actionLabel }}</span>
-        <button class="close-btn" @click="emit('close')">×</button>
+        <button class="close-btn" @click="handleClose">×</button>
       </div>
       <div class="toast-body">
         <p class="message">{{ action.message }}</p>

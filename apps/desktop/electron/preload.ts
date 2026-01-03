@@ -5,4 +5,10 @@ contextBridge.exposeInMainWorld("always", {
   moveWindow: (x: number, y: number) => ipcRenderer.invoke("window-move", { x, y }),
   setIgnoreMouseEvents: (ignore: boolean) =>
     ipcRenderer.invoke("window-ignore-mouse", { ignore }),
+  getDisplayBounds: () => ipcRenderer.invoke("window-display-bounds"),
+  showWindow: (focus = false) => ipcRenderer.invoke("window-show", { focus }),
+  hideWindow: () => ipcRenderer.invoke("window-hide"),
+  toggleWindow: () => ipcRenderer.invoke("window-toggle"),
+  setWindowFocusable: (focusable: boolean) =>
+    ipcRenderer.invoke("window-set-focusable", { focusable }),
 });

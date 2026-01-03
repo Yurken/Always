@@ -1,9 +1,11 @@
 <script lang="ts" setup>
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const props = defineProps<{
   mode: "SILENT" | "LIGHT" | "ACTIVE";
   loading: boolean;
+  autoHide?: boolean;
+  autoHideDelay?: number;
 }>();
 
 const emit = defineEmits<{
@@ -16,12 +18,101 @@ const orbRef = ref<HTMLElement | null>(null);
 const dragging = ref(false);
 const dragMoved = ref(false);
 const dragStart = ref({ x: 0, y: 0, winX: 0, winY: 0 });
+const autoHidden = ref(false);
+let autoHideTimer: number | undefined;
+
+const snapThreshold = 24;
+const defaultAutoHideDelay = 4000;
+
+const clearAutoHideTimer = () => {
+  if (autoHideTimer) {
+    clearTimeout(autoHideTimer);
+    autoHideTimer = undefined;
+  }
+};
+
+const scheduleAutoHide = () => {
+  if (!props.autoHide || props.loading) {
+    return;
+  }
+  clearAutoHideTimer();
+  autoHideTimer = window.setTimeout(() => {
+    autoHidden.value = true;
+  }, props.autoHideDelay ?? defaultAutoHideDelay);
+};
+
+const wakeOrb = () => {
+  autoHidden.value = false;
+  clearAutoHideTimer();
+};
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const getWorkArea = async () => {
+  if ((window as any).always?.getDisplayBounds) {
+    const bounds = await (window as any).always.getDisplayBounds();
+    if (bounds?.workArea) {
+      return bounds.workArea as { x: number; y: number; width: number; height: number };
+    }
+  }
+  return {
+    x: 0,
+    y: 0,
+    width: window.screen.availWidth,
+    height: window.screen.availHeight,
+  };
+};
+
+const snapToEdge = async () => {
+  const workArea = await getWorkArea();
+  const winWidth = window.outerWidth || window.innerWidth;
+  const winHeight = window.outerHeight || window.innerHeight;
+  const currentX = window.screenX;
+  const currentY = window.screenY;
+
+  const distances = [
+    { edge: "left", value: Math.abs(currentX - workArea.x) },
+    { edge: "right", value: Math.abs(workArea.x + workArea.width - (currentX + winWidth)) },
+    { edge: "top", value: Math.abs(currentY - workArea.y) },
+    { edge: "bottom", value: Math.abs(workArea.y + workArea.height - (currentY + winHeight)) },
+  ];
+  distances.sort((a, b) => a.value - b.value);
+  const nearest = distances[0];
+  if (!nearest || nearest.value > snapThreshold) {
+    return;
+  }
+
+  let snapX = clamp(currentX, workArea.x, workArea.x + workArea.width - winWidth);
+  let snapY = clamp(currentY, workArea.y, workArea.y + workArea.height - winHeight);
+
+  switch (nearest.edge) {
+    case "left":
+      snapX = workArea.x;
+      break;
+    case "right":
+      snapX = workArea.x + workArea.width - winWidth;
+      break;
+    case "top":
+      snapY = workArea.y;
+      break;
+    case "bottom":
+      snapY = workArea.y + workArea.height - winHeight;
+      break;
+    default:
+      break;
+  }
+
+  if ((window as any).always?.moveWindow) {
+    (window as any).always.moveWindow(snapX, snapY);
+  }
+  emit("drag-end", snapX, snapY);
+};
 
 const handleMouseDown = (e: MouseEvent) => {
   if (e.button !== 0) return; // Only left click for drag
   e.preventDefault();
-  // TODO: Add edge-snap + optional auto-hide for non-intrusive presence.
-  
+  wakeOrb();
   dragging.value = true;
   dragMoved.value = false;
   dragStart.value = { 
@@ -37,11 +128,13 @@ const handleMouseDown = (e: MouseEvent) => {
 
 const handleDblClick = (e: MouseEvent) => {
   e.preventDefault();
+  wakeOrb();
   emit("dblclick");
 };
 
 const handleMouseMove = (e: MouseEvent) => {
   if (!dragging.value) return;
+  wakeOrb();
   
   const dx = e.screenX - dragStart.value.x;
   const dy = e.screenY - dragStart.value.y;
@@ -66,9 +159,42 @@ const handleMouseUp = () => {
   
   if (!dragMoved.value) {
     emit("click");
+    scheduleAutoHide();
+    return;
   }
+  void snapToEdge();
+  scheduleAutoHide();
 };
 
+watch(
+  () => props.autoHide,
+  (enabled) => {
+    if (enabled) {
+      scheduleAutoHide();
+    } else {
+      wakeOrb();
+    }
+  }
+);
+
+watch(
+  () => props.loading,
+  (loading) => {
+    if (loading) {
+      wakeOrb();
+    } else {
+      scheduleAutoHide();
+    }
+  }
+);
+
+onMounted(() => {
+  scheduleAutoHide();
+});
+
+onBeforeUnmount(() => {
+  clearAutoHideTimer();
+});
 </script>
 
 <template>
@@ -80,9 +206,12 @@ const handleMouseUp = () => {
       'orb-light': mode === 'LIGHT',
       'orb-active': mode === 'ACTIVE',
       'orb-loading': loading,
+      'orb-hidden': autoHidden,
     }"
     @mousedown="handleMouseDown"
     @dblclick="handleDblClick"
+    @mouseenter="wakeOrb"
+    @mouseleave="scheduleAutoHide"
   >
     <div class="orb-inner"></div>
     <div class="orb-ring"></div>
@@ -96,13 +225,19 @@ const handleMouseUp = () => {
   border-radius: 50%;
   position: relative;
   cursor: pointer;
-  transition: transform 0.2s, filter 0.3s;
+  transition: transform 0.2s, filter 0.3s, opacity 0.3s;
   user-select: none;
   -webkit-user-select: none;
 }
 
 .orb:active {
   transform: scale(0.95);
+}
+
+.orb-hidden {
+  opacity: 0.35;
+  transform: scale(0.92);
+  filter: grayscale(0.2);
 }
 
 .orb-inner {

@@ -82,7 +82,18 @@ type OllamaModelsResponse = {
   models: string[];
 };
 
-type FeedbackType = "LIKE" | "DISLIKE" | "ADOPTED" | "IGNORED" | "CLOSED";
+type LearningExplanationResponse = {
+  summary?: string;
+  explanations?: string[];
+};
+
+type FeedbackType =
+  | "LIKE"
+  | "DISLIKE"
+  | "ADOPTED"
+  | "IGNORED"
+  | "CLOSED"
+  | "OPEN_PANEL";
 
 const modes: Mode[] = ["SILENT", "LIGHT", "ACTIVE"];
 const currentMode = ref<Mode>("LIGHT");
@@ -109,20 +120,18 @@ const formattedMode = computed(() => modeLabels[currentMode.value]);
 
 const apiBase = "http://127.0.0.1:52123";
 const panelOpen = ref(false);
-const settingsOpen = ref(false);
-const settingsLoading = ref(false);
 const settingsSaving = ref(false);
 const settingsError = ref("");
 const isSettingsWindow = ref(false);
 const ignoreMouseEvents = ref(true);
 const focusMonitorEnabled = ref(false);
 const focusCurrent = ref<FocusCurrent | null>(null);
-const focusError = ref("");
 const focusState = ref("");
 const focusSwitchCount = ref<number | null>(null);
-const focusStateUpdatedAt = ref<number | null>(null);
 let focusTimer: number | undefined;
 let stateTimer: number | undefined;
+let autoSuggestTimer: number | undefined;
+const lastAutoSuggestAt = ref(0);
 
 const interventionBudget = ref<"low" | "medium" | "high">("medium");
 const agentEnabled = ref(true);
@@ -136,7 +145,12 @@ const ollamaModel = ref("llama3.1:8b");
 const ollamaModels = ref<string[]>([]);
 const modelLoadError = ref("");
 const showModelDropdown = ref(false);
-// TODO: Surface learned preferences and "why fewer/more prompts" explanations.
+const orbAutoHide = ref(true);
+
+const learningSummary = ref("");
+const learningExplanations = ref<string[]>([]);
+const learningLoading = ref(false);
+const learningError = ref("");
 
 const historyLogs = ref<EventLog[]>([]);
 const focusRecent = ref<FocusEvent[]>([]);
@@ -148,6 +162,12 @@ const resettingLearning = ref(false);
 const resetLearningMessage = ref("");
 
 const defaultModels = ["llama3.1:8b", "qwen3:14b", "qwen3:30b", "gemma3:12b"];
+const autoSuggestIntervalsMs: Record<"low" | "medium" | "high", number> = {
+  low: 10 * 60 * 1000,
+  medium: 5 * 60 * 1000,
+  high: 2 * 60 * 1000,
+};
+const autoSuggestTickMs = 60 * 1000;
 const modelOptions = computed(() => {
   return ollamaModels.value.length ? ollamaModels.value : defaultModels;
 });
@@ -178,6 +198,24 @@ const focusStateText = computed(() => {
   return mapping[focusState.value] ?? focusState.value;
 });
 
+const promptFrequencyHint = computed(() => {
+  const match = learningExplanations.value.find((item) => item.startsWith("提示频率偏好"));
+  if (!match) {
+    return "";
+  }
+  const value = match.split(":").slice(1).join(":").trim().toLowerCase();
+  switch (value) {
+    case "low":
+      return "系统倾向减少提示";
+    case "medium":
+      return "系统保持中等提示频率";
+    case "high":
+      return "系统倾向增加提示";
+    default:
+      return "系统根据学习偏好调整提示频率";
+  }
+});
+
 const actionReasonText = computed(() => {
   const reason = result.value?.action?.reason?.trim() || "";
   if (!reason || reason === "model_no_reason") {
@@ -204,7 +242,19 @@ const gatewayDecisionText = computed(() => {
 
 const gatewayDecisionReason = computed(() => {
   const reason = result.value?.gateway_decision?.reason?.trim() || "";
-  return reason;
+  if (!reason) return "";
+  const mapping: Record<string, string> = {
+    allow: "通过",
+    invalid_action_type: "动作类型无效",
+    invalid_risk_level: "风险等级无效",
+    invalid_confidence: "置信度过低",
+    mode_silent_override: "静默模式拦截",
+    low_quality_action: "建议质量不足",
+    high_risk_blocked: "高风险拦截",
+    budget_exhausted: "预算不足",
+    cooldown_active: "冷却中",
+  };
+  return mapping[reason] ?? reason;
 });
 
 const modeLabel = (mode: Mode) => modeLabels[mode] ?? mode;
@@ -237,6 +287,27 @@ const formatDuration = (ms: number) => {
   if (!ms || ms < 0) return "—";
   const minutes = Math.max(1, Math.round(ms / 60000));
   return `${minutes} 分钟`;
+};
+
+const isWithinQuietHours = (start: string, end: string) => {
+  const parse = (value: string) => {
+    const parts = value.split(":");
+    if (parts.length !== 2) return null;
+    const hours = Number(parts[0]);
+    const minutes = Number(parts[1]);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+    return hours * 60 + minutes;
+  };
+  const startMinutes = parse(start);
+  const endMinutes = parse(end);
+  if (startMinutes === null || endMinutes === null) return false;
+  if (startMinutes === endMinutes) return false;
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
 };
 
 const toFriendlyError = (err: unknown, fallback: string) => {
@@ -337,37 +408,30 @@ const sendFeedback = async (payload: {
   }
 };
 
-const implicitIgnoreMs = 20000;
 const implicitFeedbackSent = new Set<string>();
-let ignoreTimer: number | undefined;
-
-const clearIgnoreTimer = () => {
-  if (ignoreTimer) {
-    clearTimeout(ignoreTimer);
-    ignoreTimer = undefined;
-  }
-};
-
-const scheduleIgnoreFeedback = (requestId: string) => {
-  if (!requestId || implicitFeedbackSent.has(requestId)) {
-    return;
-  }
-  clearIgnoreTimer();
-  ignoreTimer = window.setTimeout(() => {
-    void sendImplicitFeedback(requestId, "IGNORED");
-  }, implicitIgnoreMs);
-};
 
 const sendImplicitFeedback = async (requestId: string, feedback: FeedbackType) => {
-  if (!requestId || implicitFeedbackSent.has(requestId)) {
+  if (!requestId) {
     return;
   }
-  implicitFeedbackSent.add(requestId);
+  const key = `${requestId}:${feedback}`;
+  if (implicitFeedbackSent.has(key)) {
+    return;
+  }
+  implicitFeedbackSent.add(key);
   try {
     await sendFeedback({ requestId, feedback });
   } catch (err) {
     console.error("[Always] 隐式反馈失败:", err);
   }
+};
+
+const handleImplicitFeedback = (feedback: FeedbackType) => {
+  const requestId = result.value?.request_id;
+  if (!requestId) {
+    return;
+  }
+  void sendImplicitFeedback(requestId, feedback);
 };
 
 const requestSuggestion = async () => {
@@ -419,7 +483,6 @@ const requestSuggestion = async () => {
 
 const handleFeedback = async (type: "LIKE" | "DISLIKE") => {
   if (!result.value?.request_id) return;
-  clearIgnoreTimer();
 
   try {
     await sendFeedback({ requestId: result.value.request_id, feedback: type });
@@ -433,7 +496,6 @@ const handleSendMessage = async (text: string) => {
   const trimmed = text.trim();
   if (!trimmed || !result.value?.request_id) return;
 
-  clearIgnoreTimer();
   loading.value = true;
   error.value = "";
 
@@ -461,17 +523,11 @@ const handleSendMessage = async (text: string) => {
 };
 
 const handleToastClose = () => {
-  const requestId = result.value?.request_id;
   result.value = null;
-  clearIgnoreTimer();
-  if (requestId) {
-    void sendImplicitFeedback(requestId, "CLOSED");
-  }
 };
 
 const loadSettings = async () => {
   settingsError.value = "";
-  settingsLoading.value = true;
   try {
     const res = await fetch(`${apiBase}/v1/settings`);
     if (!res.ok) throw new Error("加载设置失败");
@@ -503,8 +559,6 @@ const loadSettings = async () => {
     }
   } catch (err) {
     settingsError.value = toFriendlyError(err, "加载设置失败");
-  } finally {
-    settingsLoading.value = false;
   }
 };
 
@@ -532,6 +586,44 @@ const loadHistory = async () => {
     historyError.value = toFriendlyError(err, "加载历史失败");
   } finally {
     historyLoading.value = false;
+  }
+};
+
+const formatLearningExplanation = (text: string) => {
+  const parts = text.split(":");
+  if (parts.length < 2) return text;
+  const label = parts[0].trim();
+  const value = parts.slice(1).join(":").trim();
+  if (!value) return text;
+  const normalized = value.toLowerCase();
+  const mapping: Record<string, string> = {
+    low: "低",
+    medium: "中",
+    high: "高",
+    true: "高",
+    false: "低",
+  };
+  const mapped = mapping[normalized];
+  if (!mapped) return text;
+  return `${label}: ${mapped}`;
+};
+
+const loadLearning = async () => {
+  learningError.value = "";
+  learningLoading.value = true;
+  try {
+    const res = await fetch(`${apiBase}/v1/learning/explanations?limit=12`);
+    if (!res.ok) {
+      throw new Error("加载学习偏好失败");
+    }
+    const data = (await res.json()) as LearningExplanationResponse;
+    const summary = data.summary?.trim() || "";
+    learningSummary.value = /[\u4e00-\u9fa5]/.test(summary) ? summary : "";
+    learningExplanations.value = Array.isArray(data.explanations) ? data.explanations : [];
+  } catch (err) {
+    learningError.value = toFriendlyError(err, "加载学习偏好失败");
+  } finally {
+    learningLoading.value = false;
   }
 };
 
@@ -633,6 +725,7 @@ const resetLearning = async () => {
       throw new Error("重置学习失败");
     }
     resetLearningMessage.value = "学习数据已重置";
+    loadLearning();
     window.setTimeout(() => {
       resetLearningMessage.value = "";
     }, 3000);
@@ -668,11 +761,9 @@ const fetchFocusStateSnapshot = async () => {
       const snapshot = data[0] as FocusStateSnapshot;
       focusState.value = snapshot.focus_state || "";
       focusSwitchCount.value = Number.isFinite(snapshot.switch_count) ? snapshot.switch_count : null;
-      focusStateUpdatedAt.value = snapshot.ts_ms || null;
     } else {
       focusState.value = "";
       focusSwitchCount.value = null;
-      focusStateUpdatedAt.value = null;
     }
   } catch (e) {}
 };
@@ -693,18 +784,40 @@ const toggleFocusMonitor = async () => {
 
 const togglePanel = () => {
   if (isSettingsWindow.value) return;
-  // TODO: Add hide/show for floating orb without quitting the app.
   panelOpen.value = !panelOpen.value;
 };
 
-const requestAutoSuggestion = async () => {
-  if (loading.value) return;
-  // TODO: Move auto-suggestion to a low-frequency scheduler with budget/cooldown checks.
+const hideOrb = () => {
+  panelOpen.value = false;
+  if ((window as any).always?.hideWindow) {
+    (window as any).always.hideWindow();
+  }
+};
 
-  panelOpen.value = true;
+const maybeAutoSuggest = () => {
+  if (loading.value || panelOpen.value || result.value) return;
+  if (!agentEnabled.value) return;
+  if (ruleOnlyMode.value) return;
+  if (currentMode.value === "SILENT") return;
+  if (userText.value.trim()) return;
+  if (isWithinQuietHours(quietStart.value, quietEnd.value)) return;
+  const interval = autoSuggestIntervalsMs[interventionBudget.value];
+  if (Date.now() - lastAutoSuggestAt.value < interval) return;
+  lastAutoSuggestAt.value = Date.now();
+  void requestAutoSuggestion({ openPanel: false, source: "auto" });
+};
+
+const requestAutoSuggestion = async (options: { openPanel?: boolean; source?: "manual" | "auto" } = {}) => {
+  if (loading.value) return;
+
+  const openPanel = options.openPanel ?? true;
+  if (openPanel) {
+    panelOpen.value = true;
+  }
   result.value = null;
   error.value = "";
   loading.value = true;
+  lastAutoSuggestAt.value = Date.now();
 
   console.log("[Always] 请求AI建议...");
 
@@ -756,6 +869,12 @@ const handlePointerMove = (event: MouseEvent) => {
   setIgnoreMouse(!isInteractive);
 };
 
+const handleStorageEvent = (event: StorageEvent) => {
+  if (event.key !== "always.orbAutoHide") return;
+  if (event.newValue === null) return;
+  orbAutoHide.value = event.newValue === "true";
+};
+
 watch(
   () => result.value?.context,
   (ctx) => {
@@ -772,43 +891,49 @@ watch(
 watch(
   () => result.value?.request_id,
   (requestId) => {
-    clearIgnoreTimer();
-    if (!requestId || panelOpen.value) {
-      return;
+    if (requestId && panelOpen.value) {
+      void sendImplicitFeedback(requestId, "OPEN_PANEL");
     }
-    scheduleIgnoreFeedback(requestId);
   }
 );
 
 watch(panelOpen, (open) => {
-  const requestId = result.value?.request_id;
-  if (!requestId) return;
-  if (open) {
-    clearIgnoreTimer();
-    return;
+  if ((window as any).always?.setWindowFocusable) {
+    (window as any).always.setWindowFocusable(open);
   }
-  scheduleIgnoreFeedback(requestId);
+  if (open && result.value?.request_id) {
+    void sendImplicitFeedback(result.value.request_id, "OPEN_PANEL");
+  }
+});
+
+watch(orbAutoHide, (value) => {
+  window.localStorage.setItem("always.orbAutoHide", value ? "true" : "false");
 });
 
 onMounted(() => {
   window.addEventListener("mousemove", handlePointerMove);
   window.addEventListener("mousedown", handlePointerMove);
   window.addEventListener("click", handleClickOutside);
-  // TODO: Record "panel opened" as an implicit feedback signal.
+  window.addEventListener("storage", handleStorageEvent);
+  const storedAutoHide = window.localStorage.getItem("always.orbAutoHide");
+  if (storedAutoHide !== null) {
+    orbAutoHide.value = storedAutoHide === "true";
+  }
   const params = new URLSearchParams(window.location.search);
   if (params.get("settings") === "1") {
     isSettingsWindow.value = true;
     panelOpen.value = true;
-    settingsOpen.value = true;
     document.body.classList.add("settings-window");
     loadSettings();
     loadOllamaModels();
     loadHistory();
+    loadLearning();
   } else {
     setIgnoreMouse(false);
     loadSettings();
     focusTimer = window.setInterval(fetchFocusCurrent, 2000);
     stateTimer = window.setInterval(fetchFocusStateSnapshot, 10000);
+    autoSuggestTimer = window.setInterval(maybeAutoSuggest, autoSuggestTickMs);
   }
 });
 
@@ -816,9 +941,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("mousemove", handlePointerMove);
   window.removeEventListener("mousedown", handlePointerMove);
   window.removeEventListener("click", handleClickOutside);
+  window.removeEventListener("storage", handleStorageEvent);
   if (focusTimer) clearInterval(focusTimer);
   if (stateTimer) clearInterval(stateTimer);
-  clearIgnoreTimer();
+  if (autoSuggestTimer) clearInterval(autoSuggestTimer);
 });
 </script>
 
@@ -889,6 +1015,22 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="setting-row">
+            <label>悬浮球淡出</label>
+            <div class="toggle-row">
+              <button class="toggle" :class="{ active: orbAutoHide }" @click="orbAutoHide = !orbAutoHide">
+                <span></span>
+              </button>
+              <span class="settings-note">{{ orbAutoHide ? "闲置自动淡出" : "保持常亮" }}</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label>悬浮球可见性</label>
+            <div class="toggle-row">
+              <button class="secondary" @click="hideOrb">隐藏悬浮球</button>
+              <span class="settings-note">可通过托盘或快捷键恢复</span>
+            </div>
+          </div>
+          <div class="setting-row">
             <label>安静时段</label>
             <div class="time-range">
               <input v-model="quietStart" type="time" />
@@ -918,6 +1060,24 @@ onBeforeUnmount(() => {
               ✓ 已加载 {{ ollamaModels.length }} 个模型
             </p>
           </div>
+        </div>
+
+        <div class="settings">
+          <div class="history-header">
+            <h3>学习偏好</h3>
+            <button class="secondary" :disabled="learningLoading" @click="loadLearning">
+              {{ learningLoading ? "刷新中..." : "刷新" }}
+            </button>
+          </div>
+          <p v-if="promptFrequencyHint" class="settings-note">为什么提示更多/更少：{{ promptFrequencyHint }}</p>
+          <p v-if="learningSummary" class="settings-note">{{ learningSummary }}</p>
+          <div class="learning-list">
+            <div v-for="(item, index) in learningExplanations" :key="index" class="learning-item">
+              {{ formatLearningExplanation(item) }}
+            </div>
+          </div>
+          <p v-if="!learningLoading && learningExplanations.length === 0" class="settings-note">暂无学习偏好</p>
+          <p v-if="learningError" class="settings-error">{{ learningError }}</p>
         </div>
 
         <div class="settings">
@@ -977,13 +1137,21 @@ onBeforeUnmount(() => {
 
     <!-- Widget Mode -->
     <div v-else class="widget-container">
-      <FloatingBall :mode="currentMode" :loading="loading" @click="requestAutoSuggestion" @dblclick="togglePanel" />
+      <FloatingBall
+        :mode="currentMode"
+        :loading="loading"
+        :autoHide="orbAutoHide"
+        :autoHideDelay="4000"
+        @click="requestAutoSuggestion({ openPanel: true, source: 'manual' })"
+        @dblclick="togglePanel"
+      />
 
       <SuggestionToast
         :visible="!!result && !panelOpen"
         :action="result?.action || null"
         @close="handleToastClose"
         @feedback="handleFeedback"
+        @implicit-feedback="handleImplicitFeedback"
         @sendMessage="handleSendMessage"
       />
 
@@ -994,15 +1162,18 @@ onBeforeUnmount(() => {
               <h1>Always</h1>
               <span class="mode-caption">模式：{{ formattedMode }}</span>
             </div>
-            <div class="mode">
-              <button
-                v-for="mode in modes"
-                :key="mode"
-                :class="{ active: mode === currentMode }"
-                @click="currentMode = mode"
-              >
-                {{ modeLabel(mode) }}
-              </button>
+            <div class="header-actions">
+              <button class="ghost" @click="hideOrb">隐藏</button>
+              <div class="mode">
+                <button
+                  v-for="mode in modes"
+                  :key="mode"
+                  :class="{ active: mode === currentMode }"
+                  @click="currentMode = mode"
+                >
+                  {{ modeLabel(mode) }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1085,7 +1256,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .header { display: flex; justify-content: space-between; align-items: center; }
 .header h1 { font-size: 16px; font-weight: 600; }
 .header-title { display: flex; flex-direction: column; gap: 2px; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
 .mode-caption { font-size: 10px; color: #666; }
+.ghost {
+  border: none;
+  background: transparent;
+  font-size: 10px;
+  color: #666;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.ghost:hover { color: #333; }
 
 .mode button {
   font-size: 10px;
