@@ -787,6 +787,14 @@ const togglePanel = () => {
   panelOpen.value = !panelOpen.value;
 };
 
+const handleOrbClick = () => {
+  if (panelOpen.value) {
+    panelOpen.value = false;
+    return;
+  }
+  void requestAutoSuggestion({ openPanel: true, source: "manual" });
+};
+
 const hideOrb = () => {
   panelOpen.value = false;
   if ((window as any).always?.hideWindow) {
@@ -1142,7 +1150,7 @@ onBeforeUnmount(() => {
         :loading="loading"
         :autoHide="orbAutoHide"
         :autoHideDelay="4000"
-        @click="requestAutoSuggestion({ openPanel: true, source: 'manual' })"
+        @click="handleOrbClick"
         @dblclick="togglePanel"
       />
 
