@@ -1,5 +1,5 @@
 # Always (Local Silent Companion Agent)
-
+## 本项目正在开发中...
 Always 是一个本地优先（Local-first）的桌面陪伴 Agent，旨在通过非侵入式的方式帮助用户保持专注与健康。它具备长期记忆能力，能够根据用户的行为习惯和偏好，智能地决定何时介入、如何建议。
 
 ## 核心特性
