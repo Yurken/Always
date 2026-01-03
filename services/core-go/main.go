@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"luma/core/internal/ai"
@@ -31,8 +34,9 @@ func main() {
 	focusMonitor := focus.NewMonitor(store, logger, focusInterval())
 	focusMonitor.Start()
 
+	startedAt := time.Now()
 	memoryService := memory.NewService(store.DB(), logger)
-	handler := httpapi.NewHandler(store, aiClient, focusMonitor, memoryService, logger)
+	handler := httpapi.NewHandler(store, aiClient, focusMonitor, memoryService, startedAt, logger)
 
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -40,8 +44,18 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
-	// TODO: Add health/uptime endpoint and graceful shutdown to support 24h+ runtime.
-	// TODO: Add watchdog/auto-restart integration (launchd/systemd) for long-running reliability.
+
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-shutdownCh
+		logger.Info("shutdown signal received")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			logger.Error("graceful shutdown failed", slog.Any("error", err))
+		}
+	}()
 
 	logger.Info("core service listening", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

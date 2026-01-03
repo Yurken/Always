@@ -80,6 +80,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_events_type ON memory_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_memory_events_created ON memory_events (created_at_ms);
 `
 
+const budgetUsageKey = "budget_usage"
+
 type Store struct {
 	db *sql.DB
 }
@@ -487,6 +489,29 @@ func (s *Store) GetSetting(key string) (string, bool, error) {
 		return "", false, fmt.Errorf("get setting: %w", err)
 	}
 	return value, true, nil
+}
+
+func (s *Store) GetBudgetUsage() (models.BudgetUsage, error) {
+	value, ok, err := s.GetSetting(budgetUsageKey)
+	if err != nil {
+		return models.BudgetUsage{}, err
+	}
+	if !ok || strings.TrimSpace(value) == "" {
+		return models.BudgetUsage{}, nil
+	}
+	var usage models.BudgetUsage
+	if err := json.Unmarshal([]byte(value), &usage); err != nil {
+		return models.BudgetUsage{}, fmt.Errorf("decode budget usage: %w", err)
+	}
+	return usage, nil
+}
+
+func (s *Store) SetBudgetUsage(usage models.BudgetUsage) error {
+	raw, err := json.Marshal(usage)
+	if err != nil {
+		return fmt.Errorf("encode budget usage: %w", err)
+	}
+	return s.UpsertSetting(budgetUsageKey, string(raw))
 }
 
 func (s *Store) InsertFocusEvent(event models.FocusEvent) (int64, error) {

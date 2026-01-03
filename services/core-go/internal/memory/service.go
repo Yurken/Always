@@ -2,10 +2,14 @@ package memory
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
+
+	"luma/core/internal/models"
 )
 
 type Service struct {
@@ -29,7 +33,7 @@ type Profile struct {
 
 // GetProfileSummary returns a natural language summary of user profiles
 func (s *Service) GetProfileSummary() string {
-	rows, err := s.db.Query("SELECT key, value FROM profiles WHERE confidence > 0.5")
+	rows, err := s.db.Query("SELECT key, value, confidence, updated_at_ms FROM profiles")
 	if err != nil {
 		s.logger.Error("failed to query profiles", slog.Any("error", err))
 		return ""
@@ -39,7 +43,13 @@ func (s *Service) GetProfileSummary() string {
 	var summaries []string
 	for rows.Next() {
 		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
+		var confidence float64
+		var updatedAtMs int64
+		if err := rows.Scan(&key, &value, &confidence, &updatedAtMs); err != nil {
+			continue
+		}
+		effectiveConfidence := decayConfidence(confidence, updatedAtMs)
+		if effectiveConfidence < 0.5 {
 			continue
 		}
 		// Simple formatting, can be enhanced later
@@ -50,6 +60,20 @@ func (s *Service) GetProfileSummary() string {
 		return ""
 	}
 	return strings.Join(summaries, "\n")
+}
+
+func decayConfidence(confidence float64, updatedAtMs int64) float64 {
+	if updatedAtMs <= 0 {
+		return confidence
+	}
+	ageMs := time.Now().UnixMilli() - updatedAtMs
+	if ageMs <= 0 {
+		return confidence
+	}
+	const halfLifeDays = 21.0
+	ageDays := float64(ageMs) / (24 * 60 * 60 * 1000)
+	decay := math.Pow(0.5, ageDays/halfLifeDays)
+	return confidence * decay
 }
 
 // GetRecentEvents returns recent memory events as strings
@@ -96,43 +120,106 @@ func (s *Service) SetProfile(key, value string, confidence float64) error {
 	return err
 }
 
+func (s *Service) Reset() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin reset: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM profiles"); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("clear profiles: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM memory_events"); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("clear memory_events: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reset: %w", err)
+	}
+	return nil
+}
+
 // ProcessFeedback analyzes user feedback and updates memory
 func (s *Service) ProcessFeedback(requestID, feedback string) error {
-	// TODO: Incorporate implicit feedback signals and decay profiles over time.
-	// TODO: Add user-controlled reset to clear learned preferences and memory.
-	// TODO: Learn preferred frequency, time-of-day tolerance, and suggestion-type acceptance.
 	// 1. Get the original action from event_logs
 	var finalActionJSON string
-	err := s.db.QueryRow("SELECT final_action_json FROM event_logs WHERE request_id = ?", requestID).Scan(&finalActionJSON)
+	var contextJSON string
+	err := s.db.QueryRow("SELECT final_action_json, context_json FROM event_logs WHERE request_id = ?", requestID).Scan(&finalActionJSON, &contextJSON)
 	if err != nil {
 		return fmt.Errorf("find event log: %w", err)
 	}
 
-	// 2. Parse action (simple string search for now to avoid importing models)
-	// In a real app, we should decode JSON properly
 	actionType := "UNKNOWN"
-	if strings.Contains(finalActionJSON, "DO_NOT_DISTURB") {
-		actionType = "DO_NOT_DISTURB"
-	} else if strings.Contains(finalActionJSON, "ENCOURAGE") {
-		actionType = "ENCOURAGE"
-	} else if strings.Contains(finalActionJSON, "TASK_BREAKDOWN") {
-		actionType = "TASK_BREAKDOWN"
-	} else if strings.Contains(finalActionJSON, "REST_REMINDER") {
-		actionType = "REST_REMINDER"
-	} else if strings.Contains(finalActionJSON, "REFRAME") {
-		actionType = "REFRAME"
-	}
-
-	// 3. Create a memory event
-	summary := fmt.Sprintf("User provided feedback '%s' for action '%s'", feedback, actionType)
-
-	// 4. Update Profile if strong signal (e.g. DISLIKE)
-	if feedback == "DISLIKE" {
-		// Example: If user dislikes REST_REMINDER, maybe they don't like being told to rest
-		if actionType == "REST_REMINDER" {
-			s.SetProfile("preference_rest_reminder", "User dislikes frequent rest reminders", 0.8)
+	var action models.Action
+	if err := json.Unmarshal([]byte(finalActionJSON), &action); err == nil && action.ActionType != "" {
+		actionType = string(action.ActionType)
+	} else {
+		if strings.Contains(finalActionJSON, "DO_NOT_DISTURB") {
+			actionType = "DO_NOT_DISTURB"
+		} else if strings.Contains(finalActionJSON, "ENCOURAGE") {
+			actionType = "ENCOURAGE"
+		} else if strings.Contains(finalActionJSON, "TASK_BREAKDOWN") {
+			actionType = "TASK_BREAKDOWN"
+		} else if strings.Contains(finalActionJSON, "REST_REMINDER") {
+			actionType = "REST_REMINDER"
+		} else if strings.Contains(finalActionJSON, "REFRAME") {
+			actionType = "REFRAME"
 		}
 	}
 
-	return s.AddEvent("feedback", summary, 0.5)
+	feedbackType, feedbackText := normalizeFeedback(feedback)
+	positive := feedbackType == "LIKE" || feedbackType == "ADOPTED" || feedbackType == "OPEN_PANEL"
+	negative := feedbackType == "DISLIKE" || feedbackType == "IGNORED" || feedbackType == "CLOSED"
+
+	// 3. Create a memory event
+	eventType := "feedback"
+	if feedbackType == "IGNORED" || feedbackType == "CLOSED" || feedbackType == "OPEN_PANEL" {
+		eventType = "implicit_feedback"
+	}
+	summary := fmt.Sprintf("Feedback '%s' for action '%s'", feedbackType, actionType)
+	if feedbackText != "" {
+		summary = summary + ": " + feedbackText
+	}
+
+	// 4. Update profiles for acceptance and frequency
+	if actionType != "UNKNOWN" && actionType != "DO_NOT_DISTURB" {
+		if negative {
+			_ = s.SetProfile("accepts_action_"+strings.ToLower(actionType), "false", 0.7)
+		} else if positive {
+			_ = s.SetProfile("accepts_action_"+strings.ToLower(actionType), "true", 0.6)
+		}
+	}
+	if negative {
+		_ = s.SetProfile("preferred_intervention_budget", "low", 0.6)
+	} else if positive {
+		_ = s.SetProfile("preferred_intervention_budget", "high", 0.5)
+	}
+
+	// 5. Learn time-of-day tolerance if we have context timestamp
+	var ctx models.Context
+	if err := json.Unmarshal([]byte(contextJSON), &ctx); err == nil && ctx.Timestamp > 0 {
+		hour := time.UnixMilli(ctx.Timestamp).Hour()
+		if hour >= 22 || hour < 7 {
+			if negative {
+				_ = s.SetProfile("tolerance_night_intervention", "low", 0.7)
+			} else if positive {
+				_ = s.SetProfile("tolerance_night_intervention", "high", 0.5)
+			}
+		}
+	}
+
+	return s.AddEvent(eventType, summary, 0.5)
+}
+
+func normalizeFeedback(raw string) (string, string) {
+	parts := strings.SplitN(raw, ":", 2)
+	feedbackType := strings.ToUpper(strings.TrimSpace(parts[0]))
+	feedbackText := ""
+	if len(parts) > 1 {
+		feedbackText = strings.TrimSpace(parts[1])
+	}
+	if feedbackType == "" {
+		feedbackType = "UNKNOWN"
+	}
+	return feedbackType, feedbackText
 }

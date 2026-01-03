@@ -11,7 +11,11 @@ import (
 	"luma/core/internal/models"
 )
 
-const defaultPollInterval = time.Second
+const (
+	defaultPollInterval   = time.Second
+	defaultSwitchWindow   = 10 * time.Minute
+	defaultNoProgressHold = 45 * time.Minute
+)
 
 var ErrUnsupported = errors.New("focus monitor unsupported")
 
@@ -41,6 +45,11 @@ type Monitor struct {
 	last            models.FocusEvent
 	hasLast         bool
 	lastWindowTitle string
+	switchWindow    time.Duration
+	switches        []int64
+	lastTitleChange int64
+	noProgressHold  time.Duration
+	noProgress      bool
 }
 
 func NewMonitor(store *db.Store, logger *slog.Logger, interval time.Duration) *Monitor {
@@ -52,10 +61,12 @@ func NewMonitor(store *db.Store, logger *slog.Logger, interval time.Duration) *M
 		logger.Warn("focus provider unavailable", slog.Any("error", err))
 	}
 	return &Monitor{
-		store:    store,
-		logger:   logger,
-		interval: interval,
-		provider: prov,
+		store:          store,
+		logger:         logger,
+		interval:       interval,
+		provider:       prov,
+		switchWindow:   defaultSwitchWindow,
+		noProgressHold: defaultNoProgressHold,
 	}
 }
 
@@ -143,21 +154,45 @@ func (m *Monitor) loop() {
 }
 
 func (m *Monitor) handleSnapshot(snapshot FocusSnapshot) {
-	m.mu.Lock()
-	m.lastWindowTitle = snapshot.WindowTitle
-	last := m.last
-	hasLast := m.hasLast
-	m.mu.Unlock()
-	// TODO: Track app switch counts in a rolling window for "distracted" state.
-	// TODO: Detect "no progress" using prolonged same app/title without meaningful changes.
-
-	if hasLast && sameApp(snapshot, last) {
-		return
-	}
-
 	nowMs := snapshot.TsMs
 	if nowMs == 0 {
 		nowMs = time.Now().UnixMilli()
+	}
+
+	m.mu.Lock()
+	last := m.last
+	hasLast := m.hasLast
+	prevTitle := m.lastWindowTitle
+	currentTitle := snapshot.WindowTitle
+	if currentTitle == "" {
+		currentTitle = prevTitle
+	}
+	titleChanged := currentTitle != "" && currentTitle != prevTitle
+	if currentTitle != "" {
+		m.lastWindowTitle = currentTitle
+	}
+	if titleChanged || m.lastTitleChange == 0 {
+		m.lastTitleChange = nowMs
+		m.noProgress = false
+	}
+
+	same := hasLast && sameApp(snapshot, last)
+	if hasLast && !same {
+		m.switches = append(m.switches, nowMs)
+		m.pruneSwitchesLocked(nowMs)
+		m.lastTitleChange = nowMs
+		m.noProgress = false
+	}
+	if same && !titleChanged && m.lastTitleChange > 0 {
+		elapsed := nowMs - m.lastTitleChange
+		if elapsed >= m.noProgressHold.Milliseconds() {
+			m.noProgress = true
+		}
+	}
+	m.mu.Unlock()
+
+	if hasLast && same {
+		return
 	}
 
 	if hasLast && last.ID != 0 {
@@ -188,6 +223,39 @@ func (m *Monitor) handleSnapshot(snapshot FocusSnapshot) {
 	m.last = newEvent
 	m.hasLast = true
 	m.mu.Unlock()
+}
+
+func (m *Monitor) SwitchCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.switches)
+}
+
+func (m *Monitor) NoProgress() (bool, time.Duration) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.noProgress || m.lastTitleChange == 0 {
+		return false, 0
+	}
+	elapsedMs := time.Now().UnixMilli() - m.lastTitleChange
+	if elapsedMs < 0 {
+		elapsedMs = 0
+	}
+	return true, time.Duration(elapsedMs) * time.Millisecond
+}
+
+func (m *Monitor) pruneSwitchesLocked(nowMs int64) {
+	if len(m.switches) == 0 {
+		return
+	}
+	cutoff := nowMs - m.switchWindow.Milliseconds()
+	idx := 0
+	for idx < len(m.switches) && m.switches[idx] < cutoff {
+		idx++
+	}
+	if idx > 0 {
+		m.switches = m.switches[idx:]
+	}
 }
 
 func (m *Monitor) loadEnabledSetting() (bool, error) {

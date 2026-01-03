@@ -29,6 +29,14 @@ const (
 	settingInterventionBudget = "intervention_budget"
 	settingFocusMonitor       = "focus_monitor_enabled"
 	settingOllamaModel        = "ollama_model"
+	settingAgentEnabled       = "agent_enabled"
+	settingRuleOnlyMode       = "rule_only_mode"
+	settingBudgetSilent       = "budget_silent"
+	settingBudgetLight        = "budget_light"
+	settingBudgetActive       = "budget_active"
+	settingDailyBudgetCap     = "daily_budget_cap"
+	settingHourlyBudgetCap    = "hourly_budget_cap"
+	settingCooldownSeconds    = "cooldown_seconds"
 )
 
 var allowedSettings = map[string]bool{
@@ -36,9 +44,15 @@ var allowedSettings = map[string]bool{
 	settingInterventionBudget: true,
 	settingFocusMonitor:       true,
 	settingOllamaModel:        true,
+	settingAgentEnabled:       true,
+	settingRuleOnlyMode:       true,
+	settingBudgetSilent:       true,
+	settingBudgetLight:        true,
+	settingBudgetActive:       true,
+	settingDailyBudgetCap:     true,
+	settingHourlyBudgetCap:    true,
+	settingCooldownSeconds:    true,
 }
-
-// TODO: Add settings for agent_enabled, per-mode budgets, daily/hourly caps, and rule-only mode.
 
 type Handler struct {
 	store   *db.Store
@@ -46,20 +60,31 @@ type Handler struct {
 	focus   *focus.Monitor
 	memory  *memory.Service
 	gateway *gateway.Gateway
+	started time.Time
 	logger  *slog.Logger
 }
 
-func NewHandler(store *db.Store, aiClient *ai.Client, focusMonitor *focus.Monitor, memoryService *memory.Service, logger *slog.Logger) *Handler {
-	gw := gateway.New(logger)
-	return &Handler{store: store, ai: aiClient, focus: focusMonitor, memory: memoryService, gateway: gw, logger: logger}
+func NewHandler(store *db.Store, aiClient *ai.Client, focusMonitor *focus.Monitor, memoryService *memory.Service, started time.Time, logger *slog.Logger) *Handler {
+	gw := gateway.New(logger, store)
+	return &Handler{
+		store:   store,
+		ai:      aiClient,
+		focus:   focusMonitor,
+		memory:  memoryService,
+		gateway: gw,
+		started: started,
+		logger:  logger,
+	}
 }
 
 func (h *Handler) Router() chi.Router {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(h.loggingMiddleware)
+	r.Get("/v1/health", h.handleHealth)
 	r.Post("/v1/decision", h.handleDecision)
 	r.Post("/v1/feedback", h.handleFeedback)
+	r.Post("/v1/memory/reset", h.handleMemoryReset)
 	r.Get("/v1/logs", h.handleLogs)
 	r.Get("/v1/focus/current", h.handleFocusCurrent)
 	r.Get("/v1/focus/recent", h.handleFocusRecent)
@@ -99,7 +124,7 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// TODO: If agent is disabled or within quiet hours, return DO_NOT_DISTURB without calling AI.
+	// TODO: If within quiet hours, return DO_NOT_DISTURB without calling AI.
 	// TODO: For auto-suggestions (empty user_text), enforce max-1-per-window and budget checks pre-AI.
 
 	requestID := req.RequestID
@@ -121,6 +146,54 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request) {
 	// Inject Memory
 	req.Context.ProfileSummary = h.memory.GetProfileSummary()
 	req.Context.MemorySummary = h.memory.GetRecentEvents(5)
+
+	decisionSettings, err := loadDecisionSettings(h.store)
+	if err != nil {
+		h.logger.Error("settings read failed", slog.String("request_id", requestID), slog.Any("error", err))
+		respondError(w, http.StatusInternalServerError, "settings error")
+		return
+	}
+	if !decisionSettings.AgentEnabled || decisionSettings.RuleOnly {
+		action := models.Action{
+			ActionType: models.ActionDoNotDisturb,
+			Message:    decisionSettings.disabledMessage(),
+			Confidence: 1,
+			Cost:       0,
+			RiskLevel:  models.RiskLow,
+		}
+		finalAction, gatewayDecision := h.gateway.Evaluate(req.Context, action)
+		createdAt := time.Now()
+		resp := models.DecisionResponse{
+			RequestID:       requestID,
+			Context:         req.Context,
+			Action:          finalAction,
+			PolicyVersion:   decisionSettings.policyVersion(),
+			ModelVersion:    "n/a",
+			LatencyMs:       0,
+			CreatedAt:       createdAt,
+			CreatedAtMs:     createdAt.UnixMilli(),
+			GatewayDecision: gatewayDecision,
+		}
+		logEntry := models.DecisionLogEntry{
+			RequestID:       requestID,
+			Context:         req.Context,
+			RawAction:       action,
+			FinalAction:     finalAction,
+			GatewayDecision: gatewayDecision,
+			PolicyVersion:   resp.PolicyVersion,
+			ModelVersion:    resp.ModelVersion,
+			LatencyMs:       resp.LatencyMs,
+			CreatedAt:       createdAt,
+			CreatedAtMs:     createdAt.UnixMilli(),
+		}
+		if err := h.store.InsertDecision(logEntry); err != nil {
+			h.logger.Error("insert decision failed", slog.String("request_id", requestID), slog.Any("error", err))
+			respondError(w, http.StatusInternalServerError, "db error")
+			return
+		}
+		respondJSON(w, http.StatusOK, resp)
+		return
+	}
 
 	start := time.Now()
 	rawAction, policyVersion, modelVersion, err := h.ai.Decide(req.Context, requestID)
@@ -444,6 +517,24 @@ func (h *Handler) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	now := time.Now()
+	respondJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"started_at": h.started.Format(time.RFC3339Nano),
+		"uptime_ms":  now.Sub(h.started).Milliseconds(),
+	})
+}
+
+func (h *Handler) handleMemoryReset(w http.ResponseWriter, _ *http.Request) {
+	if err := h.memory.Reset(); err != nil {
+		h.logger.Error("memory reset failed", slog.Any("error", err))
+		respondError(w, http.StatusInternalServerError, "memory reset failed")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (h *Handler) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 	tagsURL := ollamaTagsURL()
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, tagsURL, nil)
@@ -688,6 +779,13 @@ func normalizeSettingValue(key, value string) (string, error) {
 			return trimmed, nil
 		}
 		return "", fmt.Errorf("invalid quiet_hours")
+	case settingAgentEnabled, settingRuleOnlyMode:
+		switch strings.ToLower(trimmed) {
+		case "true", "false":
+			return strings.ToLower(trimmed), nil
+		default:
+			return "", fmt.Errorf("invalid %s", key)
+		}
 	case settingFocusMonitor:
 		switch strings.ToLower(trimmed) {
 		case "true", "false":
@@ -700,6 +798,18 @@ func normalizeSettingValue(key, value string) (string, error) {
 			return "", fmt.Errorf("invalid ollama_model")
 		}
 		return trimmed, nil
+	case settingBudgetSilent, settingBudgetLight, settingBudgetActive, settingDailyBudgetCap, settingHourlyBudgetCap:
+		parsed, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil || parsed < 0 {
+			return "", fmt.Errorf("invalid %s", key)
+		}
+		return trimmed, nil
+	case settingCooldownSeconds:
+		parsed, err := strconv.Atoi(trimmed)
+		if err != nil || parsed < 0 {
+			return "", fmt.Errorf("invalid cooldown_seconds")
+		}
+		return strconv.Itoa(parsed), nil
 	default:
 		return trimmed, nil
 	}
@@ -716,4 +826,47 @@ func isValidQuietHours(value string) bool {
 		}
 	}
 	return true
+}
+
+type decisionSettings struct {
+	AgentEnabled bool
+	RuleOnly     bool
+}
+
+func loadDecisionSettings(store *db.Store) (decisionSettings, error) {
+	settings := decisionSettings{
+		AgentEnabled: true,
+		RuleOnly:     false,
+	}
+	if value, ok, err := store.GetSetting(settingAgentEnabled); err != nil {
+		return settings, err
+	} else if ok {
+		settings.AgentEnabled = value == "true"
+	}
+	if value, ok, err := store.GetSetting(settingRuleOnlyMode); err != nil {
+		return settings, err
+	} else if ok {
+		settings.RuleOnly = value == "true"
+	}
+	return settings, nil
+}
+
+func (s decisionSettings) policyVersion() string {
+	if !s.AgentEnabled {
+		return "agent_disabled"
+	}
+	if s.RuleOnly {
+		return "rule_only"
+	}
+	return "policy_v0"
+}
+
+func (s decisionSettings) disabledMessage() string {
+	if !s.AgentEnabled {
+		return "Agent 已关闭，当前不生成提示。"
+	}
+	if s.RuleOnly {
+		return "规则模式已开启，已暂停 AI 提示。"
+	}
+	return "当前不生成提示。"
 }

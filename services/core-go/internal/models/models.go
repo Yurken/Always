@@ -149,6 +149,13 @@ type SettingRequest struct {
 	Value string `json:"value"`
 }
 
+type BudgetUsage struct {
+	DailyUsed  float64 `json:"daily_used"`
+	DailyDay   string  `json:"daily_day"`
+	HourlyUsed float64 `json:"hourly_used"`
+	HourlyHour string  `json:"hourly_hour"`
+}
+
 type FocusEvent struct {
 	ID         int64  `json:"id"`
 	TsMs       int64  `json:"ts_ms"`
