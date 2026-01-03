@@ -1,0 +1,16 @@
+[Unit]
+Description=Always Core Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/Always/services/core-go
+ExecStart=/path/to/always-core
+Restart=always
+RestartSec=3
+Environment=CORE_PORT=52123
+Environment=AI_URL=http://127.0.0.1:8788
+Environment=DB_PATH=/path/to/Always/services/core-go/data/always.db
+
+[Install]
+WantedBy=default.target

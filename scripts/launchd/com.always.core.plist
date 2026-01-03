@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.always.core</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/path/to/always-core</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/path/to/Always/services/core-go</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CORE_PORT</key>
+    <string>52123</string>
+    <key>AI_URL</key>
+    <string>http://127.0.0.1:8788</string>
+    <key>DB_PATH</key>
+    <string>/path/to/Always/services/core-go/data/always.db</string>
+  </dict>
+</dict>
+</plist>
