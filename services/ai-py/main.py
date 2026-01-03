@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from models import Action, ActionType, DecideRequest, DecideResponse, FeedbackRequest, RiskLevel
 from policy import get_policy
 
-app = FastAPI(title="Luma AI Service")
+app = FastAPI(title="Always AI Service")
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 LOG_PATH = os.path.join(LOG_DIR, "ai_feedback.jsonl")
@@ -18,7 +18,7 @@ LOG_PATH = os.path.join(LOG_DIR, "ai_feedback.jsonl")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("luma-ai")
+logger = logging.getLogger("always-ai")
 
 policy_name = os.getenv("LUMA_POLICY", "ollama")
 policy = get_policy(policy_name)

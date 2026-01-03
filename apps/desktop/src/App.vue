@@ -125,7 +125,7 @@ const requestSuggestion = async () => {
   };
 
   try {
-    console.log("[Luma] Sending request:", payload);
+    console.log("[Always] Sending request:", payload);
     
     // 添加超时控制（15秒）
     const controller = new AbortController();
@@ -140,24 +140,24 @@ const requestSuggestion = async () => {
     
     clearTimeout(timeoutId);
     
-    console.log("[Luma] Response status:", res.status, res.statusText);
-    console.log("[Luma] Response headers:", Object.fromEntries(res.headers.entries()));
+    console.log("[Always] Response status:", res.status, res.statusText);
+    console.log("[Always] Response headers:", Object.fromEntries(res.headers.entries()));
     
     if (!res.ok) {
       const errorText = await res.text();
-      console.error("[Luma] Error response:", errorText);
+      console.error("[Always] Error response:", errorText);
       throw new Error(`Request failed: ${res.status}`);
     }
     
     const contentType = res.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
       const text = await res.text();
-      console.error("[Luma] Non-JSON response:", text);
+      console.error("[Always] Non-JSON response:", text);
       throw new Error("Invalid response format");
     }
     
     const data = await res.json();
-    console.log("[Luma] Received data:", data);
+    console.log("[Always] Received data:", data);
     result.value = data as DecisionResponse;
   } catch (err) {
     if (err instanceof Error) {
@@ -169,7 +169,7 @@ const requestSuggestion = async () => {
     } else {
       error.value = "未知错误";
     }
-    console.error("[Luma] Request error:", err);
+    console.error("[Always] Request error:", err);
   } finally {
     loading.value = false;
   }
@@ -214,7 +214,7 @@ const handleSendMessage = async (text: string) => {
       },
     };
     
-    console.log("[Luma] Sending message:", payload);
+    console.log("[Always] Sending message:", payload);
     
     // 添加超时控制（15秒）
     const controller = new AbortController();
@@ -229,16 +229,16 @@ const handleSendMessage = async (text: string) => {
     
     clearTimeout(timeoutId);
     
-    console.log("[Luma] Message response status:", res.status);
+    console.log("[Always] Message response status:", res.status);
     
     if (!res.ok) {
       const errorText = await res.text();
-      console.error("[Luma] Message error response:", errorText);
+      console.error("[Always] Message error response:", errorText);
       throw new Error(`Request failed: ${res.status}`);
     }
     
     const data = await res.json();
-    console.log("[Luma] Message response data:", data);
+    console.log("[Always] Message response data:", data);
     result.value = data as DecisionResponse;
   } catch (err) {
     if (err instanceof Error) {
@@ -250,7 +250,7 @@ const handleSendMessage = async (text: string) => {
     } else {
       error.value = "Failed to fetch";
     }
-    console.error("[Luma] Send message error:", err);
+    console.error("[Always] Send message error:", err);
   } finally {
     loading.value = false;
   }
@@ -297,10 +297,10 @@ const loadOllamaModels = async () => {
     const data = (await res.json()) as OllamaModelsResponse;
     if (Array.isArray(data.models)) {
       ollamaModels.value = data.models;
-      console.log('[Luma] 成功加载模型列表:', data.models);
+      console.log('[Always] 成功加载模型列表:', data.models);
     }
   } catch (err) {
-    console.error('[Luma] 加载模型列表失败:', err);
+    console.error('[Always] 加载模型列表失败:', err);
     modelLoadError.value = err instanceof Error ? err.message : "加载模型列表失败";
   }
 };
@@ -379,7 +379,7 @@ const requestAutoSuggestion = async () => {
   error.value = "";
   loading.value = true;
   
-  console.log('[Luma] 请求AI建议...');
+  console.log('[Always] 请求AI建议...');
   
   const payload = {
     context: {
@@ -408,10 +408,10 @@ const requestAutoSuggestion = async () => {
     
     const data = (await res.json()) as DecisionResponse;
     result.value = data;
-    console.log('[Luma] 建议获取成功:', result.value);
+    console.log('[Always] 建议获取成功:', result.value);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "未知错误";
-    console.error('[Luma] 请求失败:', err);
+    console.error('[Always] 请求失败:', err);
   } finally {
     loading.value = false;
   }
@@ -420,8 +420,8 @@ const requestAutoSuggestion = async () => {
 const setIgnoreMouse = (ignore: boolean) => {
   if (ignoreMouseEvents.value === ignore) return;
   ignoreMouseEvents.value = ignore;
-  if ((window as any).luma?.setIgnoreMouseEvents) {
-    (window as any).luma.setIgnoreMouseEvents(ignore);
+  if ((window as any).always?.setIgnoreMouseEvents) {
+    (window as any).always.setIgnoreMouseEvents(ignore);
   }
 };
 
@@ -473,7 +473,7 @@ onBeforeUnmount(() => {
     <!-- Settings Window Mode -->
     <div v-if="isSettingsWindow" class="settings-page">
       <div class="p-6">
-        <h1 class="text-2xl font-bold mb-6">Luma 设置</h1>
+        <h1 class="text-2xl font-bold mb-6">Always 设置</h1>
         <div class="settings-grid">
             <div class="setting-row">
               <label>介入频率</label>
@@ -538,7 +538,7 @@ onBeforeUnmount(() => {
       <Transition name="widget-panel">
         <div v-if="panelOpen" class="widget-panel">
           <div class="header">
-            <h1>Luma</h1>
+            <h1>Always</h1>
             <div class="mode">
               <button v-for="mode in modes" :key="mode" :class="{ active: mode === currentMode }" @click="currentMode = mode">{{ mode }}</button>
             </div>

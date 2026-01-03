@@ -12,7 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"luma/core/internal/models"
+	"always/core/internal/models"
 )
 
 const schema = `

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"luma/core/internal/models"
+	"always/core/internal/models"
 )
 
 type Client struct {

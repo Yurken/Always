@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"luma/core/internal/ai"
-	"luma/core/internal/db"
-	"luma/core/internal/focus"
-	"luma/core/internal/httpapi"
-	"luma/core/internal/memory"
+	"always/core/internal/ai"
+	"always/core/internal/db"
+	"always/core/internal/focus"
+	"always/core/internal/httpapi"
+	"always/core/internal/memory"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 
 	port := getenv("CORE_PORT", "52123")
 	aiURL := getenv("AI_URL", "http://127.0.0.1:8788")
-	dbPath := getenv("DB_PATH", "./data/luma.db")
+	dbPath := getenv("DB_PATH", "./data/always.db")
 
 	store, err := db.Open(dbPath)
 	if err != nil {

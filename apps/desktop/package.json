@@ -1,12 +1,12 @@
 {
-  "name": "luma-desktop",
+  "name": "always-desktop",
   "private": true,
   "version": "0.1.0",
   "description": "Local-first desktop companion agent for focus and wellness",
-  "author": "Luma Team",
+  "author": "Always Team",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Yurken/Luma.git"
+    "url": "https://github.com/Yurken/Always.git"
   },
   "main": "dist-electron/main.js",
   "scripts": {
@@ -20,8 +20,8 @@
     "dist": "npm run build:main && npm run build && electron-builder"
   },
   "build": {
-    "appId": "com.luma.desktop",
-    "productName": "Luma",
+    "appId": "com.always.desktop",
+    "productName": "Always",
     "publish": null,
     "directories": {
       "output": "dist"

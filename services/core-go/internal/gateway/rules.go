@@ -1,6 +1,6 @@
 package gateway
 
-import "luma/core/internal/models"
+import "always/core/internal/models"
 
 const (
 	ReasonInvalidActionType  = "invalid_action_type"

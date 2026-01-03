@@ -17,12 +17,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"luma/core/internal/ai"
-	"luma/core/internal/db"
-	"luma/core/internal/focus"
-	"luma/core/internal/gateway"
-	"luma/core/internal/memory"
-	"luma/core/internal/models"
+	"always/core/internal/ai"
+	"always/core/internal/db"
+	"always/core/internal/focus"
+	"always/core/internal/gateway"
+	"always/core/internal/memory"
+	"always/core/internal/models"
 )
 
 const (

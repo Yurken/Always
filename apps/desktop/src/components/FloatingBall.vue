@@ -53,8 +53,8 @@ const handleMouseMove = (e: MouseEvent) => {
     const newX = dragStart.value.winX + dx;
     const newY = dragStart.value.winY + dy;
     
-    if ((window as any).luma?.moveWindow) {
-      (window as any).luma.moveWindow(newX, newY);
+    if ((window as any).always?.moveWindow) {
+      (window as any).always.moveWindow(newX, newY);
     }
   }
 };

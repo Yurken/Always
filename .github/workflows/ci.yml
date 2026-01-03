@@ -42,9 +42,9 @@ jobs:
         working-directory: services/core-go
         shell: bash
         run: |
-          OUTPUT_NAME="luma-core"
+          OUTPUT_NAME="always-core"
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            OUTPUT_NAME="luma-core.exe"
+            OUTPUT_NAME="always-core.exe"
           fi
           mkdir -p ../../apps/desktop/bin
           go build -o ../../apps/desktop/bin/$OUTPUT_NAME main.go
@@ -58,7 +58,7 @@ jobs:
           pip install pyinstaller
           
           # Build single file executable
-          pyinstaller --clean --onefile --name luma-ai main.py --distpath ../../apps/desktop/bin
+          pyinstaller --clean --onefile --name always-ai main.py --distpath ../../apps/desktop/bin
           
           # Verify output
           ls -l ../../apps/desktop/bin/

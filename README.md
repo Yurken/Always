@@ -1,6 +1,6 @@
-# Luma (Local Silent Companion Agent)
+# Always (Local Silent Companion Agent)
 
-Luma 是一个本地优先（Local-first）的桌面陪伴 Agent，旨在通过非侵入式的方式帮助用户保持专注与健康。它具备长期记忆能力，能够根据用户的行为习惯和偏好，智能地决定何时介入、如何建议。
+Always 是一个本地优先（Local-first）的桌面陪伴 Agent，旨在通过非侵入式的方式帮助用户保持专注与健康。它具备长期记忆能力，能够根据用户的行为习惯和偏好，智能地决定何时介入、如何建议。
 
 ## 核心特性
 
@@ -24,7 +24,7 @@ graph TD
         Focus["专注监控 (focusd)"]
     end
     
-    Go <-->|SQL| DB[(SQLite luma.db)]
+    Go <-->|SQL| DB[(SQLite always.db)]
     Go <-->|HTTP| Py[Python AI Service]
     
     subgraph "Python AI Service"
@@ -47,8 +47,8 @@ graph TD
 
 1.  **创建 Python 环境**（首次使用）
     ```bash
-    conda create -n luma python=3.11 -y
-    conda activate luma
+    conda create -n always python=3.11 -y
+    conda activate always
     cd services/ai-py && pip install -r requirements.txt
     ```
 
@@ -60,7 +60,7 @@ graph TD
     开发日志输出到 `logs/dev/`（ai.log、core.log、desktop.log），方便排查错误。
     或者分别启动：
     *   **Core**: `cd services/core-go && go run main.go` (Port: 52123)
-    *   **AI**: `conda activate luma && cd services/ai-py && python -m uvicorn main:app --host 127.0.0.1 --port 8788`
+    *   **AI**: `conda activate always && cd services/ai-py && python -m uvicorn main:app --host 127.0.0.1 --port 8788`
     *   **UI**: `cd apps/desktop && npm run dev`
     
     **注意**: 默认使用 Ollama 策略；若设置为其他值，将提示无可用环境。
@@ -134,8 +134,8 @@ graph TD
 
 ## 开发指南
 
-*   **数据库**: SQLite 文件位于 `services/core-go/data/luma.db`。
-*   **日志**: AI 服务日志位于 `services/ai-py/logs/` 或 `/tmp/luma-ai.log`。
+*   **数据库**: SQLite 文件位于 `services/core-go/data/always.db`。
+*   **日志**: AI 服务日志位于 `services/ai-py/logs/` 或 `/tmp/always-ai.log`。
 *   **配置**: 通过 UI 设置面板（右键悬浮球 → 设置）调整介入频率与安静时段。
     *   支持选择 Ollama 模型（从本地 Ollama 自动读取，需与 `ollama list` 一致），保存后生效。
 

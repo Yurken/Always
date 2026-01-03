@@ -8,7 +8,7 @@ import requests
 from models import Action, Context
 from .base import Policy
 
-logger = logging.getLogger("luma-ai")
+logger = logging.getLogger("always-ai")
 
 class OllamaPolicy(Policy):
     name = "ollama_v0"
@@ -97,7 +97,7 @@ class OllamaPolicy(Policy):
             memory_section = f"\nRecent Memory Events:\n{context.memory_summary}\n"
 
         return f"""
-You are Luma, an intelligent desktop companion.
+You are Always, an intelligent desktop companion.
 Your goal is to offer gentle, non-intrusive support without judging or commanding the user.
 {profile_section}{memory_section}
 Current Context:

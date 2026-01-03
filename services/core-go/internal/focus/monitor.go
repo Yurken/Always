@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"luma/core/internal/db"
-	"luma/core/internal/models"
+	"always/core/internal/db"
+	"always/core/internal/models"
 )
 
 const (
