@@ -3,6 +3,7 @@
   --primary-color: #111827;
   --primary-hover: #374151;
   --bg-color: rgba(255, 255, 255, 0.85);
+  --settings-bg: #f3f4f6;
   --panel-border: rgba(255, 255, 255, 0.6);
   --text-main: #111827;
   --text-secondary: #6b7280;
@@ -57,13 +58,14 @@ body {
 }
 
 body.settings-window {
-  background: #f3f4f6;
+  background: var(--settings-bg);
 }
 
 body.settings-window #app {
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  background: var(--settings-bg);
 }
 
 .floating-shell {
@@ -130,9 +132,7 @@ body.settings-window .floating-shell {
   border: 0.5px solid rgba(0, 0, 0, 0.08);
   border-radius: 16px;
   padding: 24px;
-  box-shadow: 
-    0 10px 40px rgba(0, 0, 0, 0.15),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.6);
   transform-origin: bottom right;
 }
 
@@ -698,6 +698,7 @@ textarea:focus {
     --text-secondary: rgba(255, 255, 255, 0.6);
     --bg-color: rgba(0, 0, 0, 0.6);
     --panel-border: rgba(255, 255, 255, 0.1);
+    --settings-bg: #111214;
   }
   
   .orb {
@@ -718,6 +719,23 @@ textarea:focus {
     box-shadow: 
       0 10px 40px rgba(0, 0, 0, 0.4),
       inset 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  }
+
+  .mode {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .mode button {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .mode button:hover {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .mode button.active {
+    background: rgba(255, 255, 255, 0.9);
+    color: rgba(0, 0, 0, 0.85);
   }
   
   textarea {
@@ -784,6 +802,25 @@ textarea:focus {
   
   .setting-row label {
     color: rgba(255, 255, 255, 0.9);
+  }
+
+  .toggle {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .toggle span {
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  .toggle.active {
+    background: rgba(10, 132, 255, 0.9);
+    border-color: rgba(10, 132, 255, 0.9);
+  }
+
+  .toggle.active span {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   }
   
   .settings-input,

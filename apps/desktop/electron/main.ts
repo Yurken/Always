@@ -168,7 +168,7 @@ const createWindow = () => {
   win.on("show", updateTrayMenu);
 
   // 自动打开开发者工具
-  win.webContents.openDevTools({ mode: "detach" });
+  // win.webContents.openDevTools({ mode: "detach" });
 
   attachContextMenu(win);
   return win;
@@ -186,6 +186,7 @@ const createSettingsWindow = () => {
     resizable: true,
     transparent: false,
     frame: true,
+    title: "Always 设置",
     backgroundColor: "#f3f4f6",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

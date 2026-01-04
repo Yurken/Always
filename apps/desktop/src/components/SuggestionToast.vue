@@ -172,8 +172,22 @@ const getActionIcon = (actionType?: string) => {
       </div>
       <div class="capsule-actions">
         <template v-if="!showTextInput">
-          <button class="action-btn" @click="handleQuickFeedback('LIKE')" title="有用">👍</button>
-          <button class="action-btn" @click="handleQuickFeedback('DISLIKE')" title="没用">👎</button>
+          <button class="action-btn action-btn--circle" @click="handleQuickFeedback('LIKE')" title="有用" aria-label="有用">
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1z"
+              />
+            </svg>
+          </button>
+          <button class="action-btn action-btn--circle" @click="handleQuickFeedback('DISLIKE')" title="没用" aria-label="没用">
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M15 3H6c-.83 0-1.54.5-1.84 1.22L1.14 11.27c-.09.23-.14.47-.14.73v1c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"
+              />
+            </svg>
+          </button>
         </template>
         <button class="action-btn" @click="toggleTextInput" :title="showTextInput ? '取消输入' : '文字反馈'">
           {{ showTextInput ? '✕' : '💬' }}
@@ -338,6 +352,34 @@ const getActionIcon = (actionType?: string) => {
   line-height: 1;
 }
 
+.action-btn.action-btn--circle {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn.action-btn--circle:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.28);
+}
+
+.action-btn.action-btn--circle:active {
+  transform: scale(0.95);
+}
+
+.action-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .action-btn:hover {
   background: rgba(0, 0, 0, 0.08);
   transform: scale(1.05);
@@ -402,6 +444,15 @@ const getActionIcon = (actionType?: string) => {
   
   .action-btn:hover {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  .action-btn.action-btn--circle {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .action-btn.action-btn--circle:hover {
+    border-color: rgba(255, 255, 255, 0.3);
   }
 }
 </style>

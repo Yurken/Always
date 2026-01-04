@@ -146,6 +146,9 @@ const ollamaModels = ref<string[]>([]);
 const modelLoadError = ref("");
 const showModelDropdown = ref(false);
 const orbAutoHide = ref(true);
+const windowIdle = ref(false);
+const windowIdleDelay = 4000;
+let windowIdleTimer: number | undefined;
 
 const learningSummary = ref("");
 const learningExplanations = ref<string[]>([]);
@@ -863,8 +866,36 @@ const setIgnoreMouse = (ignore: boolean) => {
   }
 };
 
+const clearWindowIdleTimer = () => {
+  if (windowIdleTimer) {
+    clearTimeout(windowIdleTimer);
+    windowIdleTimer = undefined;
+  }
+};
+
+const scheduleWindowIdle = () => {
+  if (isSettingsWindow.value || !orbAutoHide.value || loading.value) {
+    windowIdle.value = false;
+    clearWindowIdleTimer();
+    return;
+  }
+  clearWindowIdleTimer();
+  windowIdleTimer = window.setTimeout(() => {
+    windowIdle.value = true;
+  }, windowIdleDelay);
+};
+
+const wakeWindow = () => {
+  if (windowIdle.value) {
+    windowIdle.value = false;
+  }
+  clearWindowIdleTimer();
+  scheduleWindowIdle();
+};
+
 const handlePointerMove = (event: MouseEvent) => {
   if (isSettingsWindow.value) return;
+  wakeWindow();
   const withinViewport =
     event.clientX >= 0 &&
     event.clientX <= window.innerWidth &&
@@ -876,6 +907,11 @@ const handlePointerMove = (event: MouseEvent) => {
   // 检查所有可能的交互元素：悬浮球、面板、Toast（包括旧的和新的类名）
   const isInteractive = !!target?.closest(".orb, .widget-panel, .toast-card, .toast-capsule");
   setIgnoreMouse(!isInteractive);
+};
+
+const handleUserActivity = () => {
+  if (isSettingsWindow.value) return;
+  wakeWindow();
 };
 
 const handleStorageEvent = (event: StorageEvent) => {
@@ -913,15 +949,34 @@ watch(panelOpen, (open) => {
   if (open && result.value?.request_id) {
     void sendImplicitFeedback(result.value.request_id, "OPEN_PANEL");
   }
+  wakeWindow();
 });
 
 watch(orbAutoHide, (value) => {
   window.localStorage.setItem("always.orbAutoHide", value ? "true" : "false");
+  if (value) {
+    scheduleWindowIdle();
+  } else {
+    windowIdle.value = false;
+    clearWindowIdleTimer();
+  }
+});
+
+watch(loading, (isLoading) => {
+  if (isLoading) {
+    wakeWindow();
+  } else {
+    scheduleWindowIdle();
+  }
 });
 
 onMounted(() => {
   window.addEventListener("mousemove", handlePointerMove);
   window.addEventListener("mousedown", handlePointerMove);
+  window.addEventListener("keydown", handleUserActivity);
+  window.addEventListener("wheel", handleUserActivity, { passive: true });
+  window.addEventListener("touchstart", handleUserActivity, { passive: true });
+  window.addEventListener("focus", handleUserActivity);
   window.addEventListener("click", handleClickOutside);
   window.addEventListener("storage", handleStorageEvent);
   const storedAutoHide = window.localStorage.getItem("always.orbAutoHide");
@@ -933,6 +988,8 @@ onMounted(() => {
     isSettingsWindow.value = true;
     panelOpen.value = true;
     document.body.classList.add("settings-window");
+    windowIdle.value = false;
+    clearWindowIdleTimer();
     loadSettings();
     loadOllamaModels();
     loadHistory();
@@ -943,14 +1000,20 @@ onMounted(() => {
     focusTimer = window.setInterval(fetchFocusCurrent, 2000);
     stateTimer = window.setInterval(fetchFocusStateSnapshot, 10000);
     autoSuggestTimer = window.setInterval(maybeAutoSuggest, autoSuggestTickMs);
+    scheduleWindowIdle();
   }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("mousemove", handlePointerMove);
   window.removeEventListener("mousedown", handlePointerMove);
+  window.removeEventListener("keydown", handleUserActivity);
+  window.removeEventListener("wheel", handleUserActivity);
+  window.removeEventListener("touchstart", handleUserActivity);
+  window.removeEventListener("focus", handleUserActivity);
   window.removeEventListener("click", handleClickOutside);
   window.removeEventListener("storage", handleStorageEvent);
+  clearWindowIdleTimer();
   if (focusTimer) clearInterval(focusTimer);
   if (stateTimer) clearInterval(stateTimer);
   if (autoSuggestTimer) clearInterval(autoSuggestTimer);
@@ -962,7 +1025,6 @@ onBeforeUnmount(() => {
     <!-- Settings Window Mode -->
     <div v-if="isSettingsWindow" class="settings-page">
       <div class="p-6">
-        <h1 class="text-2xl font-bold mb-6">Always 设置</h1>
         <div class="settings-grid">
           <div class="setting-row">
             <label>智能代理</label>
@@ -1155,72 +1217,88 @@ onBeforeUnmount(() => {
         @dblclick="togglePanel"
       />
 
-      <SuggestionToast
-        :visible="!!result && !panelOpen"
-        :action="result?.action || null"
-        @close="handleToastClose"
-        @feedback="handleFeedback"
-        @implicit-feedback="handleImplicitFeedback"
-        @sendMessage="handleSendMessage"
-      />
+      <div class="widget-body" :class="{ 'widget-faded': windowIdle }">
+        <SuggestionToast
+          :visible="!!result && !panelOpen"
+          :action="result?.action || null"
+          @close="handleToastClose"
+          @feedback="handleFeedback"
+          @implicit-feedback="handleImplicitFeedback"
+          @sendMessage="handleSendMessage"
+        />
 
-      <Transition name="widget-panel">
-        <div v-if="panelOpen" class="widget-panel">
-          <div class="header">
-            <div class="header-title">
-              <h1>Always</h1>
-              <span class="mode-caption">模式：{{ formattedMode }}</span>
+        <Transition name="widget-panel">
+          <div v-if="panelOpen" class="widget-panel">
+            <div class="header">
+              <div class="header-title">
+                <h1>Always</h1>
+                <span class="mode-caption">模式：{{ formattedMode }}</span>
+              </div>
+              <div class="header-actions">
+                <button class="ghost" @click="hideOrb">隐藏</button>
+                <div class="mode">
+                  <button
+                    v-for="mode in modes"
+                    :key="mode"
+                    :class="{ active: mode === currentMode }"
+                    @click="currentMode = mode"
+                  >
+                    {{ modeLabel(mode) }}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="header-actions">
-              <button class="ghost" @click="hideOrb">隐藏</button>
-              <div class="mode">
-                <button
-                  v-for="mode in modes"
-                  :key="mode"
-                  :class="{ active: mode === currentMode }"
-                  @click="currentMode = mode"
-                >
-                  {{ modeLabel(mode) }}
+
+            <textarea v-model="userText" placeholder="有什么想说的..." />
+
+            <div class="actions">
+              <button class="primary" :disabled="loading" @click="requestSuggestion">{{ loading ? "..." : "发送" }}</button>
+            </div>
+
+            <div v-if="loading && !result && !error" class="loading-card">
+              <div class="loading-spinner"></div>
+              <p>正在思考...</p>
+            </div>
+
+            <div v-if="error" class="error-card">
+              <p>❌ {{ error }}</p>
+            </div>
+
+            <div v-if="result" class="result-card">
+              <p>{{ result.action.message }}</p>
+              <p v-if="actionReasonText" class="result-meta">原因：{{ actionReasonText }}</p>
+              <p v-if="gatewayDecisionText" class="result-meta">
+                网关：{{ gatewayDecisionText }}
+                <span v-if="gatewayDecisionReason"> / {{ gatewayDecisionReason }}</span>
+              </p>
+              <div class="feedback-row">
+                <button class="feedback-btn" @click="handleFeedback('LIKE')" aria-label="有用">
+                  <svg class="feedback-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1z"
+                    />
+                  </svg>
+                </button>
+                <button class="feedback-btn" @click="handleFeedback('DISLIKE')" aria-label="没用">
+                  <svg class="feedback-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M15 3H6c-.83 0-1.54.5-1.84 1.22L1.14 11.27c-.09.23-.14.47-.14.73v1c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"
+                    />
+                  </svg>
                 </button>
               </div>
             </div>
-          </div>
 
-          <textarea v-model="userText" placeholder="有什么想说的..." />
-
-          <div class="actions">
-            <button class="primary" :disabled="loading" @click="requestSuggestion">{{ loading ? "..." : "发送" }}</button>
-          </div>
-
-          <div v-if="loading && !result && !error" class="loading-card">
-            <div class="loading-spinner"></div>
-            <p>正在思考...</p>
-          </div>
-
-          <div v-if="error" class="error-card">
-            <p>❌ {{ error }}</p>
-          </div>
-
-          <div v-if="result" class="result-card">
-            <p>{{ result.action.message }}</p>
-            <p v-if="actionReasonText" class="result-meta">原因：{{ actionReasonText }}</p>
-            <p v-if="gatewayDecisionText" class="result-meta">
-              网关：{{ gatewayDecisionText }}
-              <span v-if="gatewayDecisionReason"> / {{ gatewayDecisionReason }}</span>
-            </p>
-            <div class="feedback-row">
-              <button @click="handleFeedback('LIKE')">👍</button>
-              <button @click="handleFeedback('DISLIKE')">👎</button>
+            <div class="focus-status">
+              <small>专注时长: {{ focusMinutesText }}</small>
+              <small>状态: {{ focusStateText }}</small>
+              <small v-if="focusMonitorEnabled && focusSwitchCount !== null">切换: {{ focusSwitchCount }} 次</small>
             </div>
           </div>
-
-          <div class="focus-status">
-            <small>专注时长: {{ focusMinutesText }}</small>
-            <small>状态: {{ focusStateText }}</small>
-            <small v-if="focusMonitorEnabled && focusSwitchCount !== null">切换: {{ focusSwitchCount }} 次</small>
-          </div>
-        </div>
-      </Transition>
+        </Transition>
+      </div>
     </div>
   </div>
 </template>
@@ -1266,33 +1344,54 @@ textarea, input {
   background: transparent;
 }
 
+body.settings-window .app-container {
+  justify-content: flex-start;
+  align-items: stretch;
+  padding: 0;
+  background: var(--settings-bg, #f3f4f6);
+}
+
 .widget-container {
   position: fixed;
   top: 10px;
   right: 10px;
+  --widget-gap: 10px;
+  --orb-size: 50px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: var(--widget-gap);
   z-index: 1000;
   background: transparent;
+}
+
+.widget-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--widget-gap);
+  transition: opacity 0.3s ease;
+}
+
+.widget-body.widget-faded {
+  opacity: 0.35;
 }
 
 .widget-panel {
   position: static;
   width: 320px;
+  max-height: calc(100vh - 20px - var(--orb-size) - var(--widget-gap));
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(30px) saturate(180%);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 
-    0 10px 40px rgba(0, 0, 0, 0.15),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.6);
   display: flex;
   flex-direction: column;
   gap: 16px;
   border: 0.5px solid rgba(0, 0, 0, 0.08);
+  overflow-y: auto;
 }
 
 .header { 
@@ -1469,8 +1568,38 @@ textarea::placeholder {
 
 .feedback-row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   margin-top: 8px;
+}
+
+.feedback-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.feedback-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.28);
+}
+
+.feedback-btn:active {
+  transform: scale(0.95);
+}
+
+.feedback-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .focus-status {
@@ -1489,10 +1618,11 @@ textarea::placeholder {
 }
 
 .settings-page {
-  background: #f3f4f6;
+  background: var(--settings-bg, #f3f4f6);
   width: 100%;
   height: 100%;
   overflow-y: auto;
+  padding: 24px 24px 32px;
 }
 
 /* Transitions */
@@ -1569,6 +1699,17 @@ textarea::placeholder {
   
   .result-meta {
     color: rgba(255, 255, 255, 0.6);
+  }
+
+  .feedback-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .feedback-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
   }
   
   .focus-status {
