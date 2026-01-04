@@ -125,6 +125,14 @@ const panelOpen = ref(false);
 const settingsSaving = ref(false);
 const settingsError = ref("");
 const isSettingsWindow = ref(false);
+const settingsTabs = [
+  { id: "agent", label: "智能" },
+  { id: "focus", label: "专注" },
+  { id: "orb", label: "悬浮球" },
+  { id: "learning", label: "学习记录" },
+] as const;
+type SettingsTab = (typeof settingsTabs)[number]["id"];
+const settingsTab = ref<SettingsTab>("agent");
 const ignoreMouseEvents = ref(true);
 const focusMonitorEnabled = ref(false);
 const focusCurrent = ref<FocusCurrent | null>(null);
@@ -1062,244 +1070,281 @@ onBeforeUnmount(() => {
   <div class="app-container">
     <!-- Settings Window Mode -->
     <div v-if="isSettingsWindow" class="settings-page">
-      <div class="p-6">
-        <div class="settings-grid">
-          <div class="setting-row">
-            <label>智能代理</label>
-            <div class="toggle-row">
-              <button class="toggle" :class="{ active: agentEnabled }" @click="agentEnabled = !agentEnabled">
-                <span></span>
-              </button>
-              <span class="settings-note">{{ agentEnabled ? "已启用" : "已停用" }}</span>
-            </div>
-          </div>
-          <div class="setting-row">
-            <label>规则优先模式</label>
-            <div class="toggle-row">
-              <button class="toggle" :class="{ active: ruleOnlyMode }" @click="ruleOnlyMode = !ruleOnlyMode">
-                <span></span>
-              </button>
-              <span class="settings-note">仅使用规则，不调用模型</span>
-            </div>
-          </div>
-          <div class="setting-row">
-            <label>介入频率</label>
-            <div class="segmented">
-              <button :class="{ active: interventionBudget === 'low' }" @click="interventionBudget = 'low'">
-                低
-              </button>
-              <button :class="{ active: interventionBudget === 'medium' }" @click="interventionBudget = 'medium'">
-                中
-              </button>
-              <button :class="{ active: interventionBudget === 'high' }" @click="interventionBudget = 'high'">
-                高
-              </button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <label>模式预算</label>
-            <div class="budget-grid">
-              <div class="budget-item">
-                <span>静默</span>
-                <input v-model="budgetSilent" class="settings-input" type="number" min="0" step="0.1" />
-              </div>
-              <div class="budget-item">
-                <span>轻度</span>
-                <input v-model="budgetLight" class="settings-input" type="number" min="0" step="0.1" />
-              </div>
-              <div class="budget-item">
-                <span>积极</span>
-                <input v-model="budgetActive" class="settings-input" type="number" min="0" step="0.1" />
+      <div class="settings-topbar">
+        <div class="settings-tabs" role="tablist">
+          <button
+            v-for="tab in settingsTabs"
+            :key="tab.id"
+            class="settings-tab"
+            :class="{ active: settingsTab === tab.id }"
+            type="button"
+            role="tab"
+            :aria-selected="settingsTab === tab.id"
+            @click="settingsTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
+      <div class="settings-content">
+        <div v-if="settingsTab === 'agent'" class="settings-tab-panel">
+          <div class="settings">
+            <h3>智能代理</h3>
+            <div class="setting-row">
+              <label>智能代理</label>
+              <div class="toggle-row">
+                <button class="toggle" :class="{ active: agentEnabled }" @click="agentEnabled = !agentEnabled">
+                  <span></span>
+                </button>
+                <span class="settings-note">{{ agentEnabled ? "已启用" : "已停用" }}</span>
               </div>
             </div>
-            <p class="settings-note">用于估算不同模式下的干预成本。</p>
-          </div>
-          <div class="setting-row">
-            <label>专注监控</label>
-            <div class="toggle-row">
-              <button class="toggle" :class="{ active: focusMonitorEnabled }" @click="toggleFocusMonitor">
-                <span></span>
-              </button>
-              <span class="settings-note">{{ focusMonitorEnabled ? "已启用" : "已关闭" }}</span>
+            <div class="setting-row">
+              <label>规则优先模式</label>
+              <div class="toggle-row">
+                <button class="toggle" :class="{ active: ruleOnlyMode }" @click="ruleOnlyMode = !ruleOnlyMode">
+                  <span></span>
+                </button>
+                <span class="settings-note">仅使用规则，不调用模型</span>
+              </div>
             </div>
-          </div>
-          <div class="setting-row">
-            <label>悬浮球淡出</label>
-            <div class="toggle-row">
-              <button class="toggle" :class="{ active: orbAutoHide }" @click="orbAutoHide = !orbAutoHide">
-                <span></span>
-              </button>
-              <span class="settings-note">{{ orbAutoHide ? "闲置自动淡出" : "保持常亮" }}</span>
+            <div class="setting-row">
+              <label>介入频率</label>
+              <div class="segmented">
+                <button :class="{ active: interventionBudget === 'low' }" @click="interventionBudget = 'low'">
+                  低
+                </button>
+                <button :class="{ active: interventionBudget === 'medium' }" @click="interventionBudget = 'medium'">
+                  中
+                </button>
+                <button :class="{ active: interventionBudget === 'high' }" @click="interventionBudget = 'high'">
+                  高
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="setting-row">
-            <label>悬浮球样式</label>
-            <div class="orb-style-grid">
-              <div class="orb-style-header-row">
-                <div></div>
-                <div v-for="mode in orbStyleModes" :key="mode.value" class="orb-style-header">
-                  {{ mode.label }}
+            <div class="setting-row">
+              <label>模式预算</label>
+              <div class="budget-grid">
+                <div class="budget-item">
+                  <span>静默</span>
+                  <input v-model="budgetSilent" class="settings-input" type="number" min="0" step="0.1" />
+                </div>
+                <div class="budget-item">
+                  <span>轻度</span>
+                  <input v-model="budgetLight" class="settings-input" type="number" min="0" step="0.1" />
+                </div>
+                <div class="budget-item">
+                  <span>积极</span>
+                  <input v-model="budgetActive" class="settings-input" type="number" min="0" step="0.1" />
                 </div>
               </div>
-              <button
-                v-for="style in orbStyleOptions"
-                :key="style.value"
-                type="button"
-                class="orb-style-row"
-                :class="{ active: orbStyle === style.value }"
-                :aria-pressed="orbStyle === style.value"
-                @click="orbStyle = style.value"
-              >
-                <span class="orb-style-label">{{ style.label }}</span>
-                <span v-for="mode in orbStyleModes" :key="mode.value" class="orb-style-cell">
-                  <span class="orb-preview" :class="[`orb-${mode.value}`, `orb-style-${style.value}`]">
-                    <span v-if="style.value === 'glass'" class="orb-preview-dot"></span>
-                    <span v-else class="orb-visual">
-                      <svg
-                        v-if="style.value === 'infinity'"
-                        class="orb-infinity"
-                        viewBox="0 0 100 50"
-                        aria-hidden="true"
-                      >
-                        <defs>
-                          <linearGradient
-                            :id="getInfinityPreviewId(mode.value)"
-                            x1="0%"
-                            y1="0%"
-                            x2="100%"
-                            y2="0%"
-                          >
-                            <stop offset="0%" style="stop-color: var(--orb-inf-start);" />
-                            <stop offset="100%" style="stop-color: var(--orb-inf-end);" />
-                          </linearGradient>
-                        </defs>
-                        <path
-                          class="orb-infinity-track"
-                          d="M 50,25 C 38,25 28,12 18,12 C 8,12 8,38 18,38 C 28,38 38,25 50,25 C 62,25 72,38 82,38 C 92,38 92,12 82,12 C 72,12 62,25 50,25 Z"
-                        />
-                        <path
-                          class="orb-infinity-stream"
-                          :style="{ stroke: `url(#${getInfinityPreviewId(mode.value)})` }"
-                          d="M 50,25 C 38,25 28,12 18,12 C 8,12 8,38 18,38 C 28,38 38,25 50,25 C 62,25 72,38 82,38 C 92,38 92,12 82,12 C 72,12 62,25 50,25 Z"
-                        />
-                      </svg>
-                      <span v-else-if="style.value === 'pulse'" class="orb-pulse" aria-hidden="true">
-                        <span class="orb-pulse-ring"></span>
-                        <span class="orb-pulse-ring"></span>
-                        <span class="orb-pulse-core"></span>
-                      </span>
-                      <span v-else class="orb-orbit" aria-hidden="true">
-                        <span class="orb-orbit-sat"></span>
-                        <span class="orb-orbit-center">A</span>
+              <p class="settings-note">用于估算不同模式下的干预成本。</p>
+            </div>
+          </div>
+
+          <div class="settings">
+            <h3>模型</h3>
+            <div class="setting-row">
+              <label>Ollama 模型</label>
+              <div class="model-input-wrapper">
+                <input
+                  v-model="ollamaModel"
+                  class="settings-input"
+                  placeholder="llama3.1:8b"
+                  @focus="showModelDropdown = true"
+                  @blur="setTimeout(() => showModelDropdown = false, 200)"
+                />
+                <div v-if="showModelDropdown && modelOptions.length" class="model-dropdown">
+                  <div v-for="model in modelOptions" :key="model" class="model-option" @click="selectModel(model)">
+                    {{ model }}
+                  </div>
+                </div>
+              </div>
+              <p class="settings-note">模型名称需与 `ollama list` 一致。</p>
+              <p v-if="modelLoadError" class="settings-note settings-warning">{{ modelLoadError }}</p>
+              <p v-else-if="ollamaModels.length > 0" class="settings-note settings-success">
+                ✓ 已加载 {{ ollamaModels.length }} 个模型
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="settingsTab === 'focus'" class="settings-tab-panel">
+          <div class="settings">
+            <h3>专注监控</h3>
+            <div class="setting-row">
+              <label>专注监控</label>
+              <div class="toggle-row">
+                <button class="toggle" :class="{ active: focusMonitorEnabled }" @click="toggleFocusMonitor">
+                  <span></span>
+                </button>
+                <span class="settings-note">{{ focusMonitorEnabled ? "已启用" : "已关闭" }}</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label>安静时段</label>
+              <div class="time-range">
+                <input v-model="quietStart" type="time" />
+                <span>至</span>
+                <input v-model="quietEnd" type="time" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="settingsTab === 'orb'" class="settings-tab-panel">
+          <div class="settings">
+            <h3>悬浮球</h3>
+            <div class="setting-row">
+              <label>悬浮球淡出</label>
+              <div class="toggle-row">
+                <button class="toggle" :class="{ active: orbAutoHide }" @click="orbAutoHide = !orbAutoHide">
+                  <span></span>
+                </button>
+                <span class="settings-note">{{ orbAutoHide ? "闲置自动淡出" : "保持常亮" }}</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label>悬浮球样式</label>
+              <div class="orb-style-grid">
+                <div class="orb-style-header-row">
+                  <div></div>
+                  <div v-for="mode in orbStyleModes" :key="mode.value" class="orb-style-header">
+                    {{ mode.label }}
+                  </div>
+                </div>
+                <button
+                  v-for="style in orbStyleOptions"
+                  :key="style.value"
+                  type="button"
+                  class="orb-style-row"
+                  :class="{ active: orbStyle === style.value }"
+                  :aria-pressed="orbStyle === style.value"
+                  @click="orbStyle = style.value"
+                >
+                  <span class="orb-style-label">{{ style.label }}</span>
+                  <span v-for="mode in orbStyleModes" :key="mode.value" class="orb-style-cell">
+                    <span class="orb-preview" :class="[`orb-${mode.value}`, `orb-style-${style.value}`]">
+                      <span v-if="style.value === 'glass'" class="orb-preview-dot"></span>
+                      <span v-else class="orb-visual">
+                        <svg
+                          v-if="style.value === 'infinity'"
+                          class="orb-infinity"
+                          viewBox="0 0 100 50"
+                          aria-hidden="true"
+                        >
+                          <defs>
+                            <linearGradient
+                              :id="getInfinityPreviewId(mode.value)"
+                              x1="0%"
+                              y1="0%"
+                              x2="100%"
+                              y2="0%"
+                            >
+                              <stop offset="0%" style="stop-color: var(--orb-inf-start);" />
+                              <stop offset="100%" style="stop-color: var(--orb-inf-end);" />
+                            </linearGradient>
+                          </defs>
+                          <path
+                            class="orb-infinity-track"
+                            d="M 50,25 C 38,25 28,12 18,12 C 8,12 8,38 18,38 C 28,38 38,25 50,25 C 62,25 72,38 82,38 C 92,38 92,12 82,12 C 72,12 62,25 50,25 Z"
+                          />
+                          <path
+                            class="orb-infinity-stream"
+                            :style="{ stroke: `url(#${getInfinityPreviewId(mode.value)})` }"
+                            d="M 50,25 C 38,25 28,12 18,12 C 8,12 8,38 18,38 C 28,38 38,25 50,25 C 62,25 72,38 82,38 C 92,38 92,12 82,12 C 72,12 62,25 50,25 Z"
+                          />
+                        </svg>
+                        <span v-else-if="style.value === 'pulse'" class="orb-pulse" aria-hidden="true">
+                          <span class="orb-pulse-ring"></span>
+                          <span class="orb-pulse-ring"></span>
+                          <span class="orb-pulse-core"></span>
+                        </span>
+                        <span v-else class="orb-orbit" aria-hidden="true">
+                          <span class="orb-orbit-sat"></span>
+                          <span class="orb-orbit-center">A</span>
+                        </span>
                       </span>
                     </span>
                   </span>
-                </span>
+                </button>
+              </div>
+              <p class="settings-note">样式颜色会随模式变化。</p>
+            </div>
+            <div class="setting-row">
+              <label>悬浮球可见性</label>
+              <div class="toggle-row">
+                <button class="secondary" @click="hideOrb">隐藏悬浮球</button>
+                <span class="settings-note">可通过托盘或快捷键恢复</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="settingsTab === 'learning'" class="settings-tab-panel">
+          <div class="settings">
+            <div class="history-header">
+              <h3>学习偏好</h3>
+              <button class="secondary" :disabled="learningLoading" @click="loadLearning">
+                {{ learningLoading ? "刷新中..." : "刷新" }}
               </button>
             </div>
-            <p class="settings-note">样式颜色会随模式变化。</p>
-          </div>
-          <div class="setting-row">
-            <label>悬浮球可见性</label>
-            <div class="toggle-row">
-              <button class="secondary" @click="hideOrb">隐藏悬浮球</button>
-              <span class="settings-note">可通过托盘或快捷键恢复</span>
-            </div>
-          </div>
-          <div class="setting-row">
-            <label>安静时段</label>
-            <div class="time-range">
-              <input v-model="quietStart" type="time" />
-              <span>至</span>
-              <input v-model="quietEnd" type="time" />
-            </div>
-          </div>
-          <div class="setting-row">
-            <label>Ollama 模型</label>
-            <div class="model-input-wrapper">
-              <input
-                v-model="ollamaModel"
-                class="settings-input"
-                placeholder="llama3.1:8b"
-                @focus="showModelDropdown = true"
-                @blur="setTimeout(() => showModelDropdown = false, 200)"
-              />
-              <div v-if="showModelDropdown && modelOptions.length" class="model-dropdown">
-                <div v-for="model in modelOptions" :key="model" class="model-option" @click="selectModel(model)">
-                  {{ model }}
-                </div>
+            <p v-if="promptFrequencyHint" class="settings-note">为什么提示更多/更少：{{ promptFrequencyHint }}</p>
+            <p v-if="learningSummary" class="settings-note">{{ learningSummary }}</p>
+            <div class="learning-list">
+              <div v-for="(item, index) in learningExplanations" :key="index" class="learning-item">
+                {{ formatLearningExplanation(item) }}
               </div>
             </div>
-            <p class="settings-note">模型名称需与 `ollama list` 一致。</p>
-            <p v-if="modelLoadError" class="settings-note settings-warning">{{ modelLoadError }}</p>
-            <p v-else-if="ollamaModels.length > 0" class="settings-note settings-success">
-              ✓ 已加载 {{ ollamaModels.length }} 个模型
-            </p>
+            <p v-if="!learningLoading && learningExplanations.length === 0" class="settings-note">暂无学习偏好</p>
+            <p v-if="learningError" class="settings-error">{{ learningError }}</p>
           </div>
-        </div>
 
-        <div class="settings">
-          <div class="history-header">
-            <h3>学习偏好</h3>
-            <button class="secondary" :disabled="learningLoading" @click="loadLearning">
-              {{ learningLoading ? "刷新中..." : "刷新" }}
-            </button>
-          </div>
-          <p v-if="promptFrequencyHint" class="settings-note">为什么提示更多/更少：{{ promptFrequencyHint }}</p>
-          <p v-if="learningSummary" class="settings-note">{{ learningSummary }}</p>
-          <div class="learning-list">
-            <div v-for="(item, index) in learningExplanations" :key="index" class="learning-item">
-              {{ formatLearningExplanation(item) }}
+          <div class="settings">
+            <h3>学习与维护</h3>
+            <div class="setting-row">
+              <label>学习数据</label>
+              <div class="toggle-row">
+                <button class="secondary" :disabled="resettingLearning" @click="resetLearning">
+                  {{ resettingLearning ? "重置中..." : "重置学习" }}
+                </button>
+                <span v-if="resetLearningMessage" class="settings-note">{{ resetLearningMessage }}</span>
+              </div>
             </div>
           </div>
-          <p v-if="!learningLoading && learningExplanations.length === 0" class="settings-note">暂无学习偏好</p>
-          <p v-if="learningError" class="settings-error">{{ learningError }}</p>
-        </div>
 
-        <div class="settings">
-          <h3>学习与维护</h3>
-          <div class="setting-row">
-            <label>学习数据</label>
-            <div class="toggle-row">
-              <button class="secondary" :disabled="resettingLearning" @click="resetLearning">
-                {{ resettingLearning ? "重置中..." : "重置学习" }}
+          <div class="settings">
+            <div class="history-header">
+              <h3>最近记录</h3>
+              <button class="secondary" :disabled="historyLoading" @click="loadHistory">
+                {{ historyLoading ? "刷新中..." : "刷新" }}
               </button>
-              <span v-if="resetLearningMessage" class="settings-note">{{ resetLearningMessage }}</span>
             </div>
-          </div>
-        </div>
-
-        <div class="settings history-section">
-          <div class="history-header">
-            <h3>最近记录</h3>
-            <button class="secondary" :disabled="historyLoading" @click="loadHistory">
-              {{ historyLoading ? "刷新中..." : "刷新" }}
-            </button>
-          </div>
-          <div class="history-grid">
-            <div class="history-block">
-              <h4>建议</h4>
-              <div class="history-list">
-                <div v-for="log in historyLogs" :key="log.request_id" class="history-item">
-                  <span class="history-title">{{ actionLabel(log.final_action?.action_type || log.action?.action_type) }}</span>
-                  <span class="history-meta">{{ formatTime(log.created_at_ms) }}</span>
+            <div class="history-grid">
+              <div class="history-block">
+                <h4>建议</h4>
+                <div class="history-list">
+                  <div v-for="log in historyLogs" :key="log.request_id" class="history-item">
+                    <span class="history-title">{{ actionLabel(log.final_action?.action_type || log.action?.action_type) }}</span>
+                    <span class="history-meta">{{ formatTime(log.created_at_ms) }}</span>
+                  </div>
                 </div>
+                <p v-if="!historyLoading && historyLogs.length === 0" class="settings-note">暂无记录</p>
               </div>
-              <p v-if="!historyLoading && historyLogs.length === 0" class="settings-note">暂无记录</p>
-            </div>
-            <div class="history-block">
-              <h4>应用切换</h4>
-              <div class="history-list">
-                <div v-for="event in focusRecent" :key="event.id" class="history-item">
-                  <span class="history-title">{{ event.app_name || "未知应用" }}</span>
-                  <span class="history-meta">{{ formatDuration(event.duration_ms) }}</span>
+              <div class="history-block">
+                <h4>应用切换</h4>
+                <div class="history-list">
+                  <div v-for="event in focusRecent" :key="event.id" class="history-item">
+                    <span class="history-title">{{ event.app_name || "未知应用" }}</span>
+                    <span class="history-meta">{{ formatDuration(event.duration_ms) }}</span>
+                  </div>
                 </div>
+                <p v-if="!historyLoading && focusRecent.length === 0" class="settings-note">暂无记录</p>
               </div>
-              <p v-if="!historyLoading && focusRecent.length === 0" class="settings-note">暂无记录</p>
             </div>
+            <p v-if="historyError" class="settings-error">{{ historyError }}</p>
+            <p v-else-if="historyUpdatedAt" class="settings-note">更新于 {{ formatDateTime(historyUpdatedAt) }}</p>
           </div>
-          <p v-if="historyError" class="settings-error">{{ historyError }}</p>
-          <p v-else-if="historyUpdatedAt" class="settings-note">更新于 {{ formatDateTime(historyUpdatedAt) }}</p>
         </div>
 
         <div class="settings-actions">
@@ -1727,8 +1772,9 @@ textarea::placeholder {
   background: var(--settings-bg, #f3f4f6);
   width: 100%;
   height: 100%;
-  overflow-y: auto;
-  padding: 24px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Transitions */

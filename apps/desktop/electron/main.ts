@@ -186,6 +186,8 @@ const createSettingsWindow = () => {
     resizable: true,
     transparent: false,
     frame: true,
+    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
+    trafficLightPosition: process.platform === "darwin" ? { x: 20, y: 20 } : undefined,
     title: "Always 设置",
     backgroundColor: "#f3f4f6",
     webPreferences: {
